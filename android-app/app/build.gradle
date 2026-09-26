@@ -1,0 +1,15 @@
+apply plugin: 'com.android.application'
+
+android {
+    namespace 'cn.xunyi.demo'
+    compileSdk 36
+    defaultConfig {
+        applicationId 'cn.xunyi.demo'
+        minSdk 26
+        targetSdk 36
+        versionCode 1
+        versionName '0.1-demo'
+    }
+    buildTypes { release { minifyEnabled false } }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+}

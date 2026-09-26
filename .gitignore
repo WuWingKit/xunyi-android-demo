@@ -1,0 +1,19 @@
+# Only the demo app, backend and project documentation are included in this repository.
+/*
+!/.gitignore
+!/README.md
+!/android-app/
+!/backend/
+
+**/.env
+**/.env.*
+**/*.db
+**/*.sqlite*
+**/__pycache__/
+**/*.pyc
+**/build/
+**/build-manual/
+**/.gradle/
+**/local.properties
+**/*.jks
+**/*.keystore

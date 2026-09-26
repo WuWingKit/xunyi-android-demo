@@ -1,0 +1,22 @@
+[Unit]
+Description=XunYi demo API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=xunyi
+Group=xunyi
+WorkingDirectory=/opt/xunyi
+EnvironmentFile=/etc/xunyi/xunyi.env
+ExecStart=/usr/bin/python3 /opt/xunyi/server.py
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/xunyi
+
+[Install]
+WantedBy=multi-user.target
