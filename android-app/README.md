@@ -1,6 +1,6 @@
 # 寻忆 Android Demo
 
-原生 Android Java 演示应用。入口是“录音／记忆／我的”三栏，按照[产品功能文档](https://wcnp29ttq8dx.feishu.cn/wiki/CXJ6wkUwxi8ylLk6KxLcB1gdnUb)的首版信息架构实现；旧[HTML 原型](https://github.com/tulip627722-byte/anker-hanker)只提供故事样例和共忆问题参考。
+原生 Android Java 演示应用。底部导航为“首页／记忆／共忆／我的”，按照[产品功能文档](https://wcnp29ttq8dx.feishu.cn/wiki/CXJ6wkUwxi8ylLk6KxLcB1gdnUb)与视觉规范实现；旧[HTML 原型](https://github.com/tulip627722-byte/anker-hanker)只提供故事样例和共忆问题参考。
 
 ## 演示路径
 

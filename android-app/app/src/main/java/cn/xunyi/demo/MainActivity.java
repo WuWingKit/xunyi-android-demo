@@ -28,7 +28,7 @@ public final class MainActivity extends Activity {
             SUB=0xFF514E48, GREEN=0xFF526B58, SAND=0xFFE9C9A9, WARN=0xFFA84D32,
             LINE=0xFFDEDAD2;
     private static final String SAMPLE="我第一次和你爷爷看电影，就是在这里。电影院门口有一棵很大的香樟树。";
-    private static final String[] QUESTIONS={"后来雨停了吗？", "散场后，你们去了哪里？", "那天有什么声音让你一直记得？"};
+    private static final String[] QUESTIONS={"那天和爷爷一起看的是什么电影？", "散场后，你们去了哪里？", "门口那棵香樟树后来还在吗？"};
     private final Handler handler=new Handler(Looper.getMainLooper());
     private DemoStore store;
     private BackendClient backend;
@@ -52,10 +52,10 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onDestroy() { releaseAudio();backend.close(); super.onDestroy(); }
     @Override public void onBackPressed() {
-        if(page.equals("home")||page.equals("memories")||page.equals("mine")) { show("home"); return; }
+        if(page.equals("home")||page.equals("memories")||page.equals("prompts")||page.equals("mine")) { show("home"); return; }
         if(page.equals("edit")) show("record");
         else if(page.equals("place")) show("record");
-        else if(page.equals("share")||page.equals("prompts")) show("memory");
+        else if(page.equals("share")) show("memory");
         else if(page.equals("memory")) show("memories");
         else show("home");
     }
@@ -98,7 +98,7 @@ public final class MainActivity extends Activity {
             case "place": place();break;
             default: home();
         }
-        if(page.equals("home")||page.equals("memories")||page.equals("mine")) bottomNav();
+        if(page.equals("home")||page.equals("memories")||page.equals("prompts")||page.equals("mine")) bottomNav();
     }
     private void header(String title,String subtitle){text(body,title,30,INK,true);gap(body,4);text(body,subtitle,16,SUB,false);gap(body,22);}
     private void back(String title,Runnable action){smallAction(body,"‹ 返回",action);gap(body,16);text(body,title,30,INK,true);gap(body,20);}
@@ -125,7 +125,7 @@ public final class MainActivity extends Activity {
     private void bottomNav(){
         nav=horizontal();nav.setPadding(dp(8),dp(6),dp(8),dp(8));nav.setBackground(outline(WHITE,22));
         root.addView(nav,lp(-1,-2));
-        tab("◉\n录音","home");tab("▣\n记忆","memories");tab("◇\n我的","mine");
+        tab("⌂\n首页","home");tab("▣\n记忆","memories");tab("♡\n共忆","prompts");tab("◇\n我的","mine");
     }
     private void tab(String text,String target){
         TextView t=label(text,17,page.equals(target)?GREEN:SUB,page.equals(target));t.setGravity(Gravity.CENTER);t.setMinHeight(dp(64));
@@ -133,7 +133,7 @@ public final class MainActivity extends Activity {
         nav.addView(t,new LinearLayout.LayoutParams(0,-2,1));t.setOnClickListener(v->show(target));
     }
     private void home(){
-        header("录音","把声音留住，故事可以慢慢整理");
+        header("首页","先看记忆珠，再听最近的故事");
         LinearLayout hero=card(body);hero.setBackground(shape(0xFFFFFDFC,30));
         text(hero,"声音记忆珠",18,INK,true);gap(hero,12);
         if(!connected()){
@@ -342,8 +342,8 @@ public final class MainActivity extends Activity {
         smallAction(body,"彻底删除",this::confirmDelete);
     }
     private void prompts(){
-        back("一起共忆",()->show("memory"));
-        LinearLayout c=card(body);text(c,"先听完她的讲述",22,INK,true);gap(c,10);
+        header("共忆","从一段声音，聊出更多细节");
+        LinearLayout c=card(body);text(c,"先听完这段讲述",22,INK,true);gap(c,10);
         text(c,"听一听，再聊聊故事里的细节。",17,SUB,false);gap(c,14);
         smallAction(c,"回听录音",this::play);
         LinearLayout q=card(body);text(q,"可忽略的开放问题",18,SUB,true);gap(q,10);
