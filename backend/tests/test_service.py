@@ -34,6 +34,12 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(record["placeBinding"]["longitude"], 121.47)
         self.assertEqual(record["candidates"], [])
 
+    def test_demo_sample_evidence_is_clearly_labeled(self):
+        record = self.service.create_recording({"transcript": "我们在旧电影院见面", "placeMention": "旧电影院",
+            "gps": {"longitude": 121.47, "latitude": 31.23, "sampledAt": "2026-09-26T08:42:00+08:00", "source": "demo_sample"}})
+        self.assertEqual(record["placeBinding"]["source"], "demo_gps")
+        self.assertIn("示例录音", record["placeBinding"]["evidence"])
+
     def test_search_requires_confirmation_and_rejects_forged_candidate(self):
         record = self.service.create_recording({"transcript": "那是在旧电影院", "placeMention": "旧电影院"})
         self.assertIsNone(record["placeBinding"])

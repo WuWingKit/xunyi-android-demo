@@ -2,8 +2,9 @@ package cn.xunyi.demo;
 
 import android.net.Uri;
 
-/** Stores only a future server address; the demo never sends personal data. */
+/** Public HTTPS endpoint. Authentication stays in device-local preferences. */
 final class BackendConfig {
+    static final String DEFAULT_URL = "https://api.qianban.cloud/xunyi";
     static boolean valid(String value) {
         if (value.isEmpty()) return true;
         Uri uri = Uri.parse(value);

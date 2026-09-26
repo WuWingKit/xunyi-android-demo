@@ -22,10 +22,10 @@ Python 3.11 标准库服务，使用 SQLite 保存录音地点证据和共忆文
 示例请求（用占位符替换令牌）：
 
 ```json
-{"transcript":"我们在旧电影院见面","placeMention":"旧电影院","gps":{"longitude":121.4737,"latitude":31.2304,"coordinateSystem":"WGS84","sampledAt":"2026-09-26T08:42:00+08:00","source":"demo_manual"}}
+{"transcript":"我们在旧电影院见面","placeMention":"旧电影院","gps":{"longitude":121.4737,"latitude":31.2304,"coordinateSystem":"WGS84","sampledAt":"2026-09-26T08:42:00+08:00","source":"demo_sample"}}
 ```
 
-`source=demo_manual` 会在证据中注明是手动演示坐标；正式设备上传时使用 `source=device`。GPS 原坐标保留为 WGS84，供高德地图使用的坐标经其官方转换接口转为 GCJ-02。没有 GPS 时，高德搜索只产生候选；用户提交服务端给出的 `candidateId` 后才绑定。当前 POI 不能证明历史地点，界面会保留这条说明。
+`source=demo_sample` 会在证据中注明是示例录音附带的位置；正式设备上传时使用 `source=device`。GPS 原坐标保留为 WGS84，供高德地图使用的坐标经其官方转换接口转为 GCJ-02。没有 GPS 时，高德搜索只产生候选；用户提交服务端给出的 `candidateId` 后才绑定。当前 POI 不能证明历史地点，用户需核对后确认。
 
 服务器高德请求限制使用 IPv4，因为当前 Web 服务 Key 的 IP 白名单对应服务器 IPv4；服务地址、令牌和 Key 均不写入仓库。
 

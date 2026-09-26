@@ -8,7 +8,7 @@
 | `POST /v1/recordings` | 创建录音元数据，依据地点提及与随附 GPS 自动绑定，或生成高德候选 |
 | `GET /v1/recordings/{id}` | 查看地点线索、GPS、绑定依据和候选 |
 | `POST /v1/recordings/{id}/places/search` | 按讲述地点查询当前地图候选 |
-| `POST /v1/recordings/{id}/places/gps` | 添加同次录音 GPS 并绑定；当前 App 的手动坐标明确标注为演示 |
+| `POST /v1/recordings/{id}/places/gps` | 添加同次录音 GPS 并绑定；当前 App 使用示例录音附带的示例位置 |
 | `POST /v1/recordings/{id}/places/confirm` | 用户确认服务器返回的候选 ID |
 | `DELETE /v1/recordings/{id}` | 删除录音地点数据和关联的共忆会话 |
 | `POST /v1/conversations` | 取得参与者同意后开始谈话 |

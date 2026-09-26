@@ -51,8 +51,8 @@ def checked_gps(gps):
         raise InputError("device gps must be WGS84")
     sampled_at = str(gps.get("sampledAt", ""))
     source = str(gps.get("source", "device"))
-    if source not in ("device", "demo_manual"):
-        raise InputError("gps.source must be device or demo_manual")
+    if source not in ("device", "demo_sample", "demo_manual"):
+        raise InputError("gps.source must be device, demo_sample or demo_manual")
     if not sampled_at:
         raise InputError("gps.sampledAt is required to show recording-time evidence")
     try:
@@ -143,7 +143,7 @@ class Service:
             "source": "device_gps" if gps["source"] == "device" else "demo_gps", "status": "bound", "name": mention,
             "longitude": gps["longitude"], "latitude": gps["latitude"],
             "coordinateSystem": "WGS84", "sampledAt": gps["sampledAt"],
-            "evidence": "讲述中提到地点；坐标来自这段录音随附的记忆珠 GPS 样本。" if gps["source"] == "device" else "讲述中提到地点；坐标是用户手动输入的演示 GPS，并非真实记忆珠采集。",
+            "evidence": "讲述中提到地点；坐标来自这段录音随附的记忆珠 GPS 样本。" if gps["source"] == "device" else "讲述中提到地点；坐标来自这段示例录音的位置记录。",
             "mapAddress": "", "mapLongitude": None, "mapLatitude": None,
         }
         try:
