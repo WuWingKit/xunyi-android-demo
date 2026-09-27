@@ -26,3 +26,15 @@ E:\Android\Sdk\emulator\emulator.exe -avd Pixel_7_API_36 -port 5558
 确认 `adb -s emulator-5558 emu avd name` 返回 `Pixel_7_API_36` 后安装 `build-manual/xunyi-demo.apk`。5555 端口的雷电模拟器不能作为安装目标。
 
 脚本从仓库外读取独立演示令牌，生成文件位于忽略的 `build-manual/gen`。服务地址固定在 `BackendConfig`，用户界面没有后台配置入口。不要把令牌、签名文件或构建 APK 推入 Git；APK 中令牌能被提取，赛后应轮换。
+
+## 0.0.1 alpha 发布包
+
+应用图标采用“声纹年轮”造型，使用品牌绿与暖杏色；共忆与“我的”页使用同一套老人、录音矢量图标。发布版本号为 `0.0.1-alpha`（versionCode 1）。
+
+```powershell
+.\build-release.ps1
+```
+
+此脚本从仓库外的 `C:\Users\small\.codex\xunyi-private\release-signing.json` 读取发布签名，输出 `build-manual/xunyi-v0.0.1-alpha.apk` 和对应 SHA-256 文件。签名配置、私钥和后台令牌不得提交到仓库。以后升级版本必须保留同一发布私钥；普通调试包与发布包使用不同签名，不能直接覆盖安装。
+
+当前 GitHub 仓库为私有仓库，alpha 发布包提供给比赛团队试用。包内演示访问令牌可被提取，正式面向公众分发前需要接入用户身份认证并撤销该令牌。

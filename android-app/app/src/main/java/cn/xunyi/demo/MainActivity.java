@@ -105,6 +105,10 @@ public final class MainActivity extends Activity {
     private void gap(LinearLayout to,int height){View v=new View(this);to.addView(v,lp(1,height));}
     private TextView label(String text,int size,int color,boolean bold){TextView v=new TextView(this);v.setText(text);v.setTextSize(size);v.setTextColor(color);v.setLineSpacing(dp(5),1.1f);if(bold)v.setTypeface(Typeface.DEFAULT,Typeface.BOLD);return v;}
     private void text(LinearLayout to,String value,int size,int color,boolean bold){to.addView(label(value,size,color,bold),lp(-1,-2));}
+    private ImageView icon(int resource,int size,String description){
+        ImageView view=new ImageView(this);view.setImageResource(resource);view.setContentDescription(description);
+        view.setScaleType(ImageView.ScaleType.FIT_CENTER);view.setLayoutParams(lp(size,size));return view;
+    }
     private LinearLayout card(LinearLayout to){LinearLayout v=vertical();v.setPadding(dp(20),dp(20),dp(20),dp(20));v.setBackground(shape(WHITE,26));v.setElevation(dp(3));LinearLayout.LayoutParams p=lp(-1,-2);p.bottomMargin=dp(16);to.addView(v,p);return v;}
     private Button button(String title,boolean primary,Runnable action){Button b=new Button(this);b.setText(title);b.setTextSize(18);b.setAllCaps(false);b.setMinHeight(dp(52));b.setPadding(dp(16),dp(8),dp(16),dp(8));b.setTextColor(primary?WHITE:GREEN);b.setBackground(primary?shape(GREEN,18):outline(WHITE,18));b.setOnClickListener(v->action.run());return b;}
     private void addButton(LinearLayout to,String title,boolean primary,Runnable action){to.addView(button(title,primary,action),lp(-1,-2));}
@@ -632,8 +636,12 @@ public final class MainActivity extends Activity {
         header("共忆","一家人开口讲，寻忆接着问");
         String session=store.get("conversation_id","");
         LinearLayout voice=card(body);voice.setBackground(shape(0xFFE9EFE9,30));
-        text(voice,"实时语音共忆",23,INK,true);gap(voice,8);
-        text(voice,"长辈  ·  家人  ·  寻忆",17,SUB,false);gap(voice,12);
+        text(voice,"实时语音共忆",23,INK,true);gap(voice,12);
+        LinearLayout rolesVisual=horizontal();voice.addView(rolesVisual,lp(-1,-2));
+        rolesVisual.addView(icon(R.drawable.ic_elder,42,"长辈"));
+        TextView elderLabel=label("长辈讲述",17,SUB,false);rolesVisual.addView(elderLabel,lp(-2,-2));
+        rolesVisual.addView(icon(R.drawable.ic_recording,42,"录音"));
+        TextView recordLabel=label("语音记录",17,SUB,false);rolesVisual.addView(recordLabel,lp(-2,-2));gap(voice,16);
         if(session.isEmpty()){
             text(voice,"打开麦克风，听讲述，接着追问故事细节。",18,INK,false);gap(voice,14);
             addButton(voice,"● 开始语音共忆",true,this::beginVoiceSession);
@@ -743,7 +751,10 @@ public final class MainActivity extends Activity {
     }
     private void mine(){
         header("我的","家庭空间与设备");
-        LinearLayout family=card(body);text(family,"家人",21,INK,true);gap(family,10);
+        LinearLayout family=card(body);
+        LinearLayout familyHeader=horizontal();family.addView(familyHeader,lp(-1,-2));
+        familyHeader.addView(icon(R.drawable.ic_elder,42,"长辈"));
+        familyHeader.addView(label("家人",21,INK,true),lp(-2,-2));gap(family,10);
         text(family,"妈妈 · 女儿 · 爸爸",18,INK,false);gap(family,6);
         text(family,"每条记忆都可以从声音继续讲下去。",16,SUB,false);
         LinearLayout device=card(body);text(device,"声音记忆珠",21,INK,true);gap(device,9);
@@ -752,6 +763,10 @@ public final class MainActivity extends Activity {
         smallAction(device,"查看设备",()->show("connect"));
         LinearLayout privacy=card(body);text(privacy,"隐私",21,INK,true);gap(privacy,8);
         text(privacy,"分享前逐条选择接收人和内容。",17,SUB,false);
+        TextView version=label("寻忆 0.0.1 alpha",16,SUB,false);
+        version.setGravity(Gravity.CENTER);body.addView(version,lp(-1,-2));gap(body,8);
+        TextView credit=label("demo制作团队——胡荣杰、余佳欣\n黄红琳、张珈茗然",16,SUB,false);
+        credit.setGravity(Gravity.CENTER);body.addView(credit,lp(-1,-2));gap(body,20);
     }
     private void connect(){
         back("声音记忆珠",()->show("mine"));
