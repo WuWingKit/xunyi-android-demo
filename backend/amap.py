@@ -102,9 +102,9 @@ class AmapClient:
             })
         return result
 
-    def static_map(self, points):
+    def static_map(self, points, overview=False):
         """Return a bounded PNG from AMap using only server-selected GCJ-02 points."""
-        if not self.key or not 1 <= len(points) <= 5:
+        if not self.key or not 1 <= len(points) <= 10:
             raise AmapError("map location unavailable")
         try:
             coordinates = [(float(lon), float(lat)) for lon, lat in points]
@@ -112,10 +112,13 @@ class AmapClient:
                 raise ValueError("coordinates out of range")
         except (TypeError, ValueError) as exc:
             raise AmapError("map coordinates invalid") from exc
-        markers = "|".join(f"mid,0x526B58,{i + 1}:{lon:.6f},{lat:.6f}"
+        markers = "|".join(f"large,0xA84D32,{chr(65 + i)}:{lon:.6f},{lat:.6f}"
                            for i, (lon, lat) in enumerate(coordinates))
-        query = urllib.parse.urlencode({"key": self.key, "size": "720*480", "scale": "2",
-                                        "zoom": "13" if len(points) == 1 else "11", "markers": markers})
+        params = {"key": self.key, "size": "720*720" if overview else "720*480",
+                  "scale": "1", "markers": markers}
+        if len(points) == 1:
+            params["zoom"] = "15"
+        query = urllib.parse.urlencode(params)
         connection = http.client.HTTPSConnection("restapi.amap.com", timeout=self.timeout)
         connection._create_connection = self._ipv4_connection
         try:

@@ -2,14 +2,19 @@ package cn.xunyi.demo;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.Manifest;
+import android.content.pm.PackageManager;
 import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.media.MediaPlayer;
+import android.media.MediaRecorder;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
+import android.speech.tts.TextToSpeech;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -25,6 +30,8 @@ import android.widget.RadioButton;
 import android.widget.RadioGroup;
 import org.json.JSONArray;
 import org.json.JSONObject;
+import java.io.File;
+import java.util.Locale;
 
 public final class MainActivity extends Activity {
     private static final int BG=0xFFF7F5F2, WHITE=Color.WHITE, INK=0xFF282622,
@@ -51,18 +58,33 @@ public final class MainActivity extends Activity {
     private String selectedCandidateId="";
     private String placeReturn="record";
     private boolean loadingMemories=false;
+    private MediaRecorder voiceRecorder;
+    private boolean voiceActive=false;
+    private long voiceStarted=0;
+    private TextView voiceMeter, voiceClock;
+    private String voiceSpeaker="elder";
+    private String lastVoicePath="";
+    private TextToSpeech voiceTts;
+    private boolean ttsReady=false;
+    private String pendingSpeech="";
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         store=new DemoStore(this);
         backend=new BackendClient(store);
+        voiceTts=new TextToSpeech(this,status->{
+            if(status==TextToSpeech.SUCCESS && voiceTts!=null){
+                ttsReady=voiceTts.setLanguage(Locale.CHINA)>=0;
+                if(ttsReady&&!pendingSpeech.isEmpty()){voiceTts.speak(pendingSpeech,TextToSpeech.QUEUE_FLUSH,null,"xunyi-prompt");pendingSpeech="";}
+            }
+        });
         getWindow().setStatusBarColor(BG);
         getWindow().setNavigationBarColor(BG);
         show("home");
         loadMemories();
         loadRecordings();
     }
-    @Override protected void onDestroy() { releaseAudio();backend.close(); super.onDestroy(); }
+    @Override protected void onDestroy() { stopVoiceCapture(false);releaseAudio();if(voiceTts!=null)voiceTts.shutdown();backend.close(); super.onDestroy(); }
     @Override public void onBackPressed() {
         if(page.equals("home")||page.equals("memories")||page.equals("prompts")||page.equals("mine")) { show("home"); return; }
         if(page.equals("edit")) show("record");
@@ -71,6 +93,7 @@ public final class MainActivity extends Activity {
         else if(page.equals("memory")) show("memories");
         else if(page.equals("record")) show("recordings");
         else if(page.equals("recordings")) show("home");
+        else if(page.equals("atlas")) show("memories");
         else show("home");
     }
     private int dp(float n){return Math.round(n*getResources().getDisplayMetrics().density);}
@@ -120,15 +143,28 @@ public final class MainActivity extends Activity {
         placeReturn="memory";selectedCandidateId="";
         backend.get("/v1/recordings/"+recordingId,(data,error)->{
             if(data==null){message("地点线索暂时无法打开："+error);return;}
-            storePlaceResponse(data);show("place");
+            storePlaceResponse(data);show("place");ensureCandidates(data);
+        });
+    }
+    private void ensureCandidates(JSONObject data){
+        JSONArray found=data.optJSONArray("candidates");
+        if(data.optJSONObject("placeBinding")!=null || (found!=null&&found.length()>0))return;
+        String id=data.optString("id"),query=data.optString("placeMention","").replace(" · ","").replace("附近","");
+        if(id.isEmpty()||query.length()<2)return;
+        JSONObject payload=new JSONObject();
+        try{payload.put("query",query);}catch(Exception ignored){}
+        backend.post("/v1/recordings/"+id+"/places/search",payload,(result,error)->{
+            if(result!=null){storePlaceResponse(result);if(page.equals("place"))render();}
+            else if(page.equals("place"))message("地点候选暂时没有加载："+error);
         });
     }
     private void returnFromPlace(){if(placeReturn.equals("memory"))openMemory(selectedMemoryId);
         else if(remoteRecord!=null)openRecord(remoteRecord.optString("id"));else show("recordings");}
-    private void map(LinearLayout target,String path){
-        ImageView image=new ImageView(this);image.setAdjustViewBounds(true);image.setScaleType(ImageView.ScaleType.CENTER_CROP);
+    private void map(LinearLayout target,String path){map(target,path,200);}
+    private void map(LinearLayout target,String path,int height){
+        ImageView image=new ImageView(this);image.setAdjustViewBounds(true);image.setScaleType(ImageView.ScaleType.FIT_CENTER);
         image.setBackground(shape(0xFFEAE7DF,18));
-        target.addView(image,lp(-1,200));
+        target.addView(image,lp(-1,height));
         TextView status=label("地图加载中…",16,SUB,false);target.addView(status,lp(-1,-2));
         backend.image(path,(bitmap,error)->{if(bitmap!=null){image.setImageBitmap(bitmap);status.setVisibility(View.GONE);}
             else status.setText(error);});
@@ -154,7 +190,7 @@ public final class MainActivity extends Activity {
                 else if(media!=null){media.start();button.setText("正在播放 · 点击暂停");}});
         }catch(Exception ex){message("音频暂时无法播放。");}
     }
-    private void show(String next){releaseAudio();page=next;render();if(next.equals("prompts"))loadConversation();}
+    private void show(String next){if(!next.equals("prompts"))stopVoiceCapture(false);releaseAudio();page=next;render();if(next.equals("prompts"))loadConversation();}
     private void loadConversation(){
         String id=store.get("conversation_id","");
         if(id.isEmpty())return;
@@ -177,6 +213,7 @@ public final class MainActivity extends Activity {
             case "recordings": recordings();break;
             case "edit": edit();break;
             case "memories": memories();break;
+            case "atlas": atlas();break;
             case "memory": memory();break;
             case "share": share();break;
             case "prompts": prompts();break;
@@ -265,70 +302,93 @@ public final class MainActivity extends Activity {
         if(binding!=null){text(location,binding.optString("name","已确认地点"),18,INK,false);gap(location,10);
             map(location,"/v1/recordings/"+remoteRecord.optString("id")+"/places/map");gap(location,8);}
         else text(location,"还没有确认地点",17,SUB,false);
-        gap(location,12);smallAction(location,"在地图上核对地点",()->{placeReturn="record";show("place");});
+        gap(location,12);smallAction(location,"在地图上核对地点",()->{
+            placeReturn="record";selectedCandidateId="";show("place");ensureCandidates(remoteRecord);
+        });
     }
     private void place(){
-        back("地点绑定",this::returnFromPlace);
-        text(body,"先看依据，再决定地点",17,SUB,false);gap(body,16);
-        JSONObject data=placeData();JSONObject binding=data.optJSONObject("placeBinding");
-        if(binding!=null){
-            LinearLayout bound=card(body);text(bound,placeSummary(),21,GREEN,true);gap(bound,8);
-            text(bound,binding.optString("evidence",""),17,INK,false);gap(bound,8);
-            if(!store.get("backend_recording_id","").isEmpty()){map(bound,"/v1/recordings/"+store.get("backend_recording_id","")+"/places/map");gap(bound,8);}
-            if(!binding.optString("mapAddress","").isEmpty())text(bound,"高德当前地址："+binding.optString("mapAddress"),16,SUB,false);
-        }
-        LinearLayout search=card(body);text(search,"讲述中提到的地点",20,INK,true);gap(search,8);
-        EditText mention=input(data.optString("placeMention","旧电影院").replace(" · ","").replace("附近",""),1);mention.setSingleLine(true);search.addView(mention,lp(-1,-2));gap(search,8);
-        text(search,"可输入地标、街道或建筑名称，再核对地图结果。",16,SUB,false);gap(search,14);
-        addButton(search,"搜索地点候选",true,()->{
-            String query=mention.getText().toString().trim();if(query.length()<2){mention.setError("请填写至少两个字");return;}
-            String id=store.get("backend_recording_id","");
-            if(id.isEmpty()){
-                JSONObject payload=new JSONObject();try{payload.put("transcript",transcript());payload.put("placeMention",query);}catch(Exception ignored){}
-                backend.post("/v1/recordings",payload,(result,error)->{
-                    if(error!=null){message("地点搜索未完成："+error+" 录音仍在本机。");return;}
-                    selectedCandidateId="";storePlaceResponse(result);message("已找到候选，请核对名称和地址后确认绑定。");
-                });
-            }else{
-                JSONObject payload=new JSONObject();try{payload.put("query",query);}catch(Exception ignored){}
-                backend.post("/v1/recordings/"+id+"/places/search",payload,(result,error)->{
-                    if(error!=null){message("地点搜索未完成："+error+" 原有录音与绑定未改变。");return;}
-                    selectedCandidateId="";storePlaceResponse(result);message("候选已更新，请确认具体地点。");
-                });
-            }
-        });
+        back("核对地点",this::returnFromPlace);
+        JSONObject data=placeData();String recordingId=data.optString("id",store.get("backend_recording_id",""));
+        JSONObject binding=data.optJSONObject("placeBinding");
         JSONArray candidates=data.optJSONArray("candidates");
+        if(binding!=null){
+            LinearLayout bound=card(body);text(bound,"✓ 已绑定 · "+binding.optString("name"),21,INK,true);gap(bound,8);
+            text(bound,binding.optString("evidence",""),17,SUB,false);gap(bound,12);
+            map(bound,"/v1/recordings/"+recordingId+"/places/map",300);
+        }
         if(candidates!=null&&candidates.length()>0){
-            text(body,"待确认候选",22,INK,true);gap(body,10);
+            if(selectedCandidateId.isEmpty()){
+                JSONObject first=candidates.optJSONObject(0);
+                if(first!=null)selectedCandidateId=first.optString("candidateId","");
+            }
+            text(body,"高德地图 · 地点候选",22,INK,true);gap(body,10);
             LinearLayout mapCard=card(body);
-            text(mapCard,"地图位置",20,INK,true);gap(mapCard,10);
-            String rid=store.get("backend_recording_id","");
-            String mapPath="/v1/recordings/"+rid+"/places/map";
-            if(!selectedCandidateId.isEmpty())mapPath="/v1/recordings/"+rid+"/places/candidates/"+selectedCandidateId+"/map";
-            map(mapCard,mapPath);gap(mapCard,8);
-            text(mapCard,"点选下方地点，地图会聚焦该标点。",16,SUB,false);
-            for(int i=0;i<candidates.length();i++){
+            map(mapCard,"/v1/recordings/"+recordingId+"/places/map",320);
+            gap(mapCard,10);
+            text(mapCard,"地图上的 A–E 与下方候选对应。",16,SUB,false);
+            LinearLayout picks=horizontal();mapCard.addView(picks,lp(-1,-2));
+            for(int i=0;i<candidates.length()&&i<5;i++){
                 JSONObject item=candidates.optJSONObject(i);if(item==null)continue;
-                LinearLayout c=card(body);text(c,item.optString("name","未知地点"),20,INK,true);gap(c,7);
-                text(c,item.optString("city","")+item.optString("district","")+" "+item.optString("address",""),16,SUB,false);gap(c,7);
-                text(c,item.optString("evidence",""),16,SUB,false);gap(c,12);
-                String candidateId=item.optString("candidateId","");
-                if(candidateId.equals(selectedCandidateId)){text(c,"✓ 当前选中",16,GREEN,true);gap(c,8);}
-                smallAction(c,"在地图上查看",()->{selectedCandidateId=candidateId;render();});gap(c,8);
-                smallAction(c,"确认绑定此地点",()->new AlertDialog.Builder(this).setTitle("确认这是故事中的地点？")
-                        .setMessage(item.optString("name")+"\n"+item.optString("address")+"\n请依据讲述内容核对。")
+                final String id=item.optString("candidateId","");
+                Button pin=button(String.valueOf((char)('A'+i)),id.equals(selectedCandidateId),()->{
+                    selectedCandidateId=id;render();
+                });
+                LinearLayout.LayoutParams pinSize=new LinearLayout.LayoutParams(0,dp(52),1);
+                pinSize.rightMargin=dp(5);picks.addView(pin,pinSize);
+            }
+            JSONObject selected=null;int selectedIndex=0;
+            for(int i=0;i<candidates.length();i++){
+                JSONObject item=candidates.optJSONObject(i);
+                if(item!=null&&item.optString("candidateId").equals(selectedCandidateId)){
+                    selected=item;selectedIndex=i;break;
+                }
+            }
+            if(selected!=null){
+                final JSONObject chosen=selected;final String candidateId=selectedCandidateId;
+                LinearLayout focus=card(body);focus.setBackground(shape(0xFFE9EFE9,26));
+                text(focus,"已选择 "+(char)('A'+selectedIndex)+" · "+selected.optString("name"),21,INK,true);gap(focus,8);
+                text(focus,selected.optString("city")+selected.optString("district")+" "+selected.optString("address"),17,SUB,false);gap(focus,8);
+                text(focus,selected.optString("evidence"),16,SUB,false);gap(focus,14);
+                addButton(focus,"确认绑定这个地点",true,()->new AlertDialog.Builder(this)
+                        .setTitle("确认故事中的地点？")
+                        .setMessage(chosen.optString("name")+"\n"+chosen.optString("address"))
                         .setPositiveButton("确认绑定",(dialog,which)->{
-                            JSONObject payload=new JSONObject();try{payload.put("candidateId",candidateId);}catch(Exception ignored){}
-                            backend.post("/v1/recordings/"+store.get("backend_recording_id","")+"/places/confirm",payload,(result,error)->{
-                                if(error!=null){message("绑定未完成："+error);return;}
-                                storePlaceResponse(result);message("✓ 地点已由你确认并绑定。 ");
+                            JSONObject payload=new JSONObject();
+                            try{payload.put("candidateId",candidateId);}catch(Exception ignored){}
+                            backend.post("/v1/recordings/"+recordingId+"/places/confirm",payload,(result,error)->{
+                                if(result==null){message("绑定未完成："+error);return;}
+                                storePlaceResponse(result);loadMemories();message("地点已绑定到这段讲述和关联记忆。");
                             });
                         }).setNegativeButton("再看看",null).show());
             }
+            text(body,"切换候选",20,INK,true);gap(body,10);
+            for(int i=0;i<candidates.length();i++){
+                JSONObject item=candidates.optJSONObject(i);if(item==null)continue;
+                String candidateId=item.optString("candidateId","");
+                char marker=(char)('A'+i);
+                LinearLayout choice=card(body);
+                choice.setOnClickListener(v->{selectedCandidateId=candidateId;render();});
+                text(choice,marker+" · "+item.optString("name"),19,INK,true);gap(choice,5);
+                text(choice,item.optString("city")+item.optString("district")+" "+item.optString("address"),16,SUB,false);gap(choice,10);
+                smallAction(choice,candidateId.equals(selectedCandidateId)?"✓ 已选中":"选择这个地点",()->{
+                    selectedCandidateId=candidateId;render();
+                });
+            }
+        }else if(binding==null){
+            LinearLayout loading=card(body);text(loading,"正在查找附近的地点…",18,INK,false);
         }
-        if(candidates!=null&&candidates.length()==0&&data.optJSONObject("placeBinding")==null&&!data.optString("mentionSource").equals("sample")){
-            text(body,"没有找到合适的地点。可试试附近的地标或街道名称。",16,SUB,false);gap(body,12);
-        }
+        LinearLayout search=card(body);text(search,"换个地名搜索",20,INK,true);gap(search,8);
+        EditText mention=input(data.optString("placeMention","").replace(" · ","").replace("附近",""),1);
+        mention.setSingleLine(true);mention.setHint("输入地标、街道或建筑");search.addView(mention,lp(-1,-2));gap(search,12);
+        addButton(search,"搜索地图候选",false,()->{
+            String query=mention.getText().toString().trim();
+            if(query.length()<2){mention.setError("请填写至少两个字");return;}
+            JSONObject payload=new JSONObject();try{payload.put("query",query);}catch(Exception ignored){}
+            backend.post("/v1/recordings/"+recordingId+"/places/search",payload,(result,error)->{
+                if(result==null){message("搜索未完成："+error);return;}
+                selectedCandidateId="";storePlaceResponse(result);render();
+            });
+        });
     }
     private void player(LinearLayout parent){
         LinearLayout c=card(parent);text(c,"听录音",21,INK,true);gap(c,6);
@@ -381,6 +441,7 @@ public final class MainActivity extends Activity {
     private EditText input(String value,int minLines){EditText e=new EditText(this);e.setText(value);e.setTextSize(18);e.setTextColor(INK);e.setMinLines(minLines);e.setPadding(dp(12),dp(10),dp(12),dp(10));e.setBackground(outline(WHITE,16));return e;}
     private void memories(){
         header("记忆","家人的故事，连同原声一起保存");
+        addButton(body,"打开记忆地图",true,()->show("atlas"));gap(body,16);
         EditText search=input("",1);search.setSingleLine(true);search.setHint("搜索记忆");body.addView(search,lp(-1,-2));gap(body,16);
         LinearLayout results=vertical();body.addView(results,lp(-1,-2));
         Runnable refresh=()->{
@@ -400,6 +461,22 @@ public final class MainActivity extends Activity {
         };
         search.addTextChangedListener(new android.text.TextWatcher(){public void beforeTextChanged(CharSequence s,int st,int c,int a){}public void onTextChanged(CharSequence s,int st,int before,int count){refresh.run();}public void afterTextChanged(android.text.Editable e){}});
         refresh.run();
+    }
+    private void atlas(){
+        back("记忆地图",()->show("memories"));
+        text(body,"沿着地图，找回一家人的故事",17,SUB,false);gap(body,14);
+        LinearLayout mapCard=card(body);
+        map(mapCard,"/v1/memories/map",320);gap(mapCard,10);
+        text(mapCard,"点击下方 A、B、C，打开对应记忆。",16,SUB,false);
+        int markerIndex=0;
+        for(int i=0;i<remoteMemories.length()&&i<10;i++){
+            JSONObject item=remoteMemories.optJSONObject(i);if(item==null)continue;
+            JSONObject place=item.optJSONObject("place");if(place==null)continue;
+            char marker=(char)('A'+markerIndex++);
+            LinearLayout c=card(body);text(c,marker+" · "+item.optString("title"),20,INK,true);gap(c,7);
+            text(c,place.optString("name"),17,SUB,false);gap(c,12);
+            addButton(c,"查看这段记忆",false,()->openMemory(item.optString("id")));
+        }
     }
     private void memory(){
         back("记忆详情",()->show("memories"));
@@ -470,11 +547,110 @@ public final class MainActivity extends Activity {
         LinearLayout bubble=card(body);bubble.setBackground(shape(assistant?0xFFE9EFE9:WHITE,24));
         text(bubble,speaker,16,GREEN,true);gap(bubble,8);text(bubble,message,18,INK,false);
     }
+    private void beginVoiceSession(){
+        new AlertDialog.Builder(this).setTitle("开始语音共忆")
+                .setMessage("请确认在场家人同意录音。声音保存在这台设备上。")
+                .setPositiveButton("已同意，开始",(d,w)->{
+                    JSONObject payload=new JSONObject();try{payload.put("consent",true);}catch(Exception ignored){}
+                    backend.post("/v1/conversations",payload,(data,error)->{
+                        if(data==null){message("共忆暂时无法开始："+error);return;}
+                        store.put("conversation_id",data.optString("id",""));remoteConversation=null;
+                        loadConversation();startVoiceCapture();
+                    });
+                }).setNegativeButton("取消",null).show();
+    }
+    private void startVoiceCapture(){
+        if(voiceActive)return;
+        if(checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED){
+            requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO},301);return;
+        }
+        try{
+            File audioFile=new File(getFilesDir(),"conversation-"+System.currentTimeMillis()+".m4a");
+            lastVoicePath=audioFile.getAbsolutePath();
+            voiceRecorder=new MediaRecorder();
+            voiceRecorder.setAudioSource(MediaRecorder.AudioSource.MIC);
+            voiceRecorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
+            voiceRecorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);
+            voiceRecorder.setOutputFile(audioFile.getAbsolutePath());
+            voiceRecorder.prepare();voiceRecorder.start();
+            voiceStarted=SystemClock.elapsedRealtime();voiceActive=true;render();updateVoiceMeter();
+        }catch(Exception ex){stopVoiceCapture(false);message("麦克风没有启动，请检查录音权限。");}
+    }
+    @Override public void onRequestPermissionsResult(int requestCode,String[] permissions,int[] grantResults){
+        super.onRequestPermissionsResult(requestCode,permissions,grantResults);
+        if(requestCode==301){
+            if(grantResults.length>0&&grantResults[0]==PackageManager.PERMISSION_GRANTED)startVoiceCapture();
+            else message("需要麦克风权限才能开始语音共忆。");
+        }
+    }
+    private void updateVoiceMeter(){
+        if(!voiceActive||voiceRecorder==null)return;
+        int amplitude=0;try{amplitude=voiceRecorder.getMaxAmplitude();}catch(Exception ignored){}
+        int bars=Math.max(1,Math.min(6,amplitude/4500+1));
+        StringBuilder waves=new StringBuilder();
+        for(int i=0;i<6;i++)waves.append(i<bars?"▆":"▂").append(' ');
+        if(voiceMeter!=null)voiceMeter.setText(waves.toString());
+        if(voiceClock!=null)voiceClock.setText("● 正在听 · "+formatTime((int)(SystemClock.elapsedRealtime()-voiceStarted)));
+        handler.postDelayed(this::updateVoiceMeter,300);
+    }
+    private void stopVoiceCapture(boolean draft){
+        if(!voiceActive&&voiceRecorder==null)return;
+        voiceActive=false;
+        if(voiceRecorder!=null){
+            try{voiceRecorder.stop();}catch(Exception ignored){}
+            try{voiceRecorder.reset();voiceRecorder.release();}catch(Exception ignored){}
+            voiceRecorder=null;
+        }
+        voiceMeter=null;voiceClock=null;
+        if(draft)showVoiceDraft();
+    }
+    private void showVoiceDraft(){
+        String sample="那天电影散场，我和他在街上走了很久。电影院门口有一棵香樟树。";
+        if(remoteMemory!=null){JSONArray sources=remoteMemory.optJSONArray("recordings");
+            if(sources!=null&&sources.length()>0&&sources.optJSONObject(0)!=null)
+                sample=sources.optJSONObject(0).optString("transcript",sample);}
+        EditText draft=input(sample,3);
+        LinearLayout form=vertical();form.setPadding(dp(20),dp(4),dp(20),dp(4));form.addView(draft,lp(-1,-2));
+        new AlertDialog.Builder(this).setTitle("讲述已录下")
+                .setMessage("下方是演示转写，可修改后让寻忆接着提问。")
+                .setView(form)
+                .setPositiveButton("生成追问",(d,w)->submitTurn(voiceSpeaker,draft.getText().toString()))
+                .setNegativeButton("稍后再说",(d,w)->render()).show();
+    }
+    private void speakPrompt(String question){
+        if(ttsReady&&voiceTts!=null)voiceTts.speak(question,TextToSpeech.QUEUE_FLUSH,null,"xunyi-prompt");
+        else pendingSpeech=question;
+    }
+    private void playLastVoice(){
+        if(lastVoicePath.isEmpty())return;
+        try{
+            releaseAudio();media=new MediaPlayer();media.setDataSource(lastVoicePath);media.prepare();
+            media.setOnCompletionListener(m->releaseAudio());media.start();
+        }catch(Exception ex){releaseAudio();message("这段声音暂时无法回听。");}
+    }
     private void prompts(){
-        header("共忆","一起把故事慢慢聊完整");
+        header("共忆","一家人开口讲，寻忆接着问");
         String session=store.get("conversation_id","");
+        LinearLayout voice=card(body);voice.setBackground(shape(0xFFE9EFE9,30));
+        text(voice,"实时语音共忆",23,INK,true);gap(voice,8);
+        text(voice,"长辈  ·  家人  ·  寻忆",17,SUB,false);gap(voice,12);
         if(session.isEmpty()){
-            text(body,"一段共忆示例",16,SUB,false);gap(body,12);
+            text(voice,"打开麦克风，听讲述，接着追问故事细节。",18,INK,false);gap(voice,14);
+            addButton(voice,"● 开始语音共忆",true,this::beginVoiceSession);
+        }else{
+            smallAction(voice,"本轮说话人："+(voiceSpeaker.equals("elder")?"长辈":"家人")+" · 点此切换",()->{
+                voiceSpeaker=voiceSpeaker.equals("elder")?"family":"elder";render();
+            });gap(voice,12);
+            voiceClock=label(voiceActive?"● 正在听 · 00:00":"○ 等待讲述",20,voiceActive?WARN:INK,true);
+            voice.addView(voiceClock,lp(-1,-2));gap(voice,8);
+            voiceMeter=label(voiceActive?"▂ ▂ ▂ ▂ ▂ ▂":"▂ ▂ ▂ ▂ ▂ ▂",28,GREEN,true);
+            voice.addView(voiceMeter,lp(-1,-2));gap(voice,14);
+            addButton(voice,voiceActive?"■ 结束讲述并生成追问":"● 开始说话",true,
+                    ()->{if(voiceActive)stopVoiceCapture(true);else startVoiceCapture();});
+            if(!voiceActive&&!lastVoicePath.isEmpty()){gap(voice,10);smallAction(voice,"▶ 回听刚才录下的声音",this::playLastVoice);}
+        }
+        if(session.isEmpty()){
+            text(body,"语音共忆示例",18,INK,true);gap(body,12);
             sampleBubble("长辈","那天电影散场，我和他在街上走了很久。",false);
             sampleBubble("家人","您还记得当时走的是哪条路吗？",false);
             sampleBubble("寻忆","那一路上，还有什么让您记到现在？",true);
@@ -486,25 +662,13 @@ public final class MainActivity extends Activity {
                 String speaker=turn.optString("speaker");
                 LinearLayout bubble=card(body);
                 bubble.setBackground(shape(speaker.equals("assistant")?0xFFE9EFE9:WHITE,24));
-                text(bubble,speaker.equals("assistant")?"寻忆":speaker.equals("elder")?"长辈":"家人",16,GREEN,true);gap(bubble,8);
+                text(bubble,speaker.equals("assistant")?"寻忆 · 语音追问":speaker.equals("elder")?"长辈":"家人",16,GREEN,true);gap(bubble,8);
                 text(bubble,turn.optString("text"),18,INK,false);
             }
         }
-        LinearLayout talk=card(body);text(talk,"家庭谈话",21,INK,true);gap(talk,8);
-        if(session.isEmpty()){
-            text(talk,"邀请家人一起聊，开始前请征得在场人的同意。",17,SUB,false);gap(talk,14);
-            addButton(talk,"开始共忆",true,()->new AlertDialog.Builder(this).setTitle("开始这次共忆？")
-                    .setMessage("请先取得在场参与者同意。这次共忆只保存主动输入的文字。")
-                    .setPositiveButton("已同意，开始",(d,w)->{
-                        JSONObject payload=new JSONObject();try{payload.put("consent",true);String rid=store.get("backend_recording_id","");if(!rid.isEmpty())payload.put("recordingId",rid);}catch(Exception ignored){}
-                        backend.post("/v1/conversations",payload,(data,error)->{
-                            if(error!=null){message("谈话未开始："+error);return;}
-                            store.put("conversation_id",data.optString("id",""));remoteConversation=null;loadConversation();
-                            message("共忆已开始。");
-                        });
-                    }).setNegativeButton("取消",null).show());
-        }else{
-            text(talk,"想起什么，就从这里继续说。",17,SUB,false);gap(talk,10);
+        if(!session.isEmpty()){
+            LinearLayout talk=card(body);text(talk,"文字补充",20,INK,true);gap(talk,8);
+            text(talk,"也可以补上没说完整的细节。",16,SUB,false);gap(talk,10);
             RadioGroup roles=new RadioGroup(this);roles.setOrientation(RadioGroup.HORIZONTAL);
             RadioButton elder=new RadioButton(this);elder.setId(View.generateViewId());elder.setText("长辈");
             elder.setTextSize(17);elder.setTextColor(INK);elder.setMinHeight(dp(48));
@@ -512,9 +676,9 @@ public final class MainActivity extends Activity {
             family.setTextSize(17);family.setTextColor(INK);family.setMinHeight(dp(48));
             roles.addView(elder);roles.addView(family);roles.check(elder.getId());talk.addView(roles,lp(-1,-2));gap(talk,8);
             EditText turn=input("",3);turn.setHint("输入刚才讲述的话");talk.addView(turn,lp(-1,-2));gap(talk,12);
-            addButton(talk,"发送",true,()->submitTurn(roles.getCheckedRadioButtonId()==family.getId()?"family":"elder",turn.getText().toString()));
+            addButton(talk,"发送文字",false,()->submitTurn(roles.getCheckedRadioButtonId()==family.getId()?"family":"elder",turn.getText().toString()));
         }
-        gap(body,3);text(body,"语音对话等待官方 SDK 下发后进行补充。",16,SUB,false);
+        gap(body,3);text(body,"语音转写与模型回答等待官方 SDK 下发后接入；目前追问由演示规则生成。",16,SUB,false);
     }
     private void submitTurn(String speaker,String value){
         String content=value.trim();if(content.isEmpty()){message("请先输入本轮讲述文字。 ");return;}
@@ -525,9 +689,10 @@ public final class MainActivity extends Activity {
             if(speaker.equals("family")){loadConversation();message("家人的补充已记入这次谈话。");return;}
             backend.post("/v1/conversations/"+session+"/prompts/next",new JSONObject(),(prompt,promptError)->{
                 if(promptError!=null){message("讲述已保存，但提问暂不可用："+promptError);return;}
-                store.put("backend_question",prompt.optString("question",QUESTIONS[questionIndex]));
+                String question=prompt.optString("question",QUESTIONS[questionIndex]);
+                store.put("backend_question",question);speakPrompt(question);
                 loadConversation();
-                message("长辈讲述已保存。");
+                message("寻忆接着提出了一个问题。");
             });
         });
     }

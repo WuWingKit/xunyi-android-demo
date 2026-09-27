@@ -10,6 +10,7 @@ App 使用固定 HTTPS 服务地址。比赛演示令牌从仓库外文件注入
 | `POST /v1/memories/{id}/edit` | 保存用户修改的故事 |
 | `DELETE /v1/memories/{id}` | 删除记忆，保留讲述录音 |
 | `GET /v1/memories/{id}/map` | 高德地图 PNG |
+| `GET /v1/memories/map` | 所有记忆地点的 A–J 标点总览 PNG |
 | `POST /v1/memories/{id}/recordings` | 关联另一次录音 |
 | `POST /v1/recordings` | 创建录音元数据，依据地点提及与随附 GPS 自动绑定，或生成高德候选 |
 | `GET /v1/recordings` | 讲述录音列表与关联记忆数 |
@@ -26,4 +27,4 @@ App 使用固定 HTTPS 服务地址。比赛演示令牌从仓库外文件注入
 | `POST /v1/conversations/{id}/prompts/next` | 返回可忽略的规则演示问题 |
 | `DELETE /v1/conversations/{id}` | 删除谈话文字 |
 
-所有 `v1` 接口需要 `Authorization: Bearer <token>`。高德 Key 仅由服务端持有。设备通信、音频上传、语音识别、大模型提问及家庭账号仍等待官方 SDK 和下一阶段身份方案，不把规则演示问题当作模型结果。
+所有 `v1` 接口需要 `Authorization: Bearer <token>`。高德 Key 仅由服务端持有。Android 在明确操作后可本地录音、显示音量和时长，并用系统语音合成朗读规则追问；服务端仍只存文字。设备通信、音频上传、实时语音识别、大模型提问及家庭账号仍等待官方 SDK 和下一阶段身份方案，不把规则演示问题当作模型结果。

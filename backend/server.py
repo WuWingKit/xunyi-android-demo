@@ -66,6 +66,9 @@ class Handler(BaseHTTPRequestHandler):
             return None
         if path == "/v1/memories" and self.command == "GET":
             return 200, {"memories": self.service.memories()}
+        if path == "/v1/memories/map" and self.command == "GET":
+            self._send_png(self.service.memories_map())
+            return None
         match = re.fullmatch(r"/v1/memories/([a-f0-9]{32})", path)
         if match and self.command == "GET":
             return 200, self.service.memory(match.group(1))

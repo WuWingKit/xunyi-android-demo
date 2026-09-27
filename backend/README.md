@@ -13,6 +13,7 @@ Python 3.11 标准库服务，使用 SQLite 保存记忆、关联录音、地点
 | `POST /v1/memories/{id}/edit` | 修改故事标题与正文 |
 | `DELETE /v1/memories/{id}` | 删除整理后的记忆，保留来源录音 |
 | `GET /v1/memories/{id}/map` | 带标点的高德地图 PNG |
+| `GET /v1/memories/map` | 所有已绑定记忆地点的 A–J 总览地图 PNG |
 | `POST /v1/memories/{id}/recordings` | 经用户确认后关联另一段录音 |
 | `POST /v1/recordings` | 创建录音元数据；有地点提及及同次 GPS 时自动绑定，否则搜索候选 |
 | `GET /v1/recordings` | 已保存讲述列表及关联记忆数量 |
@@ -39,7 +40,7 @@ Python 3.11 标准库服务，使用 SQLite 保存记忆、关联录音、地点
 
 服务器高德请求限制使用 IPv4，因为当前 Web 服务 Key 的 IP 白名单对应服务器 IPv4；地图由服务端代理 PNG，Key 不进入 App。服务地址可公开，令牌和 Key 均不写入仓库。示例记忆使用固定 ID 幂等写入；再次启动不会覆盖用户确认的地点。
 
-谈话接口只处理用户主动提交的文字，不接收或监听实时音频。返回的提问有 `source=demo_rules` 和“等待官方 SDK 下发后进行补充”标识，后续可替换成官方 SDK 的语音识别、说话人分离与大模型能力。
+Android 端在用户主动操作后用手机麦克风录制本轮声音，录音留在 App 私有目录；当前由用户核对演示转写后主动提交文字，服务端只接收文字轮次，不接收音频流。返回的提问有 `source=demo_rules` 和“等待官方 SDK 下发后进行补充”标识；Android 可用系统语音合成朗读追问。实时转写、说话人分离与大模型能力留待官方 SDK 接入。
 
 ## 运行
 

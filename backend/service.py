@@ -186,6 +186,14 @@ class Service:
         if not place: raise InputError("memory has no location")
         return self.amap.static_map([(place["mapLongitude"], place["mapLatitude"])])
 
+    def memories_map(self):
+        places = [item["place"] for item in self.memories() if item["place"]]
+        points = [(p["mapLongitude"], p["mapLatitude"]) for p in places
+                  if p.get("mapLongitude") is not None and p.get("mapLatitude") is not None]
+        if not points:
+            raise InputError("no memory locations available")
+        return self.amap.static_map(points[:10], overview=True)
+
     def recording_map(self, recording_id, candidate_id=""):
         record = self.recording(recording_id)
         if candidate_id:
@@ -199,7 +207,7 @@ class Service:
             else:
                 points = [(c["longitude"], c["latitude"]) for c in record["candidates"]]
         if not points: raise InputError("no map location available")
-        return self.amap.static_map(points)
+        return self.amap.static_map(points, overview=len(points)>1)
 
     @contextmanager
     def _db(self):

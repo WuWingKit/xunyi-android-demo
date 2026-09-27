@@ -8,8 +8,9 @@ from service import InputError, Service, mentioned_place
 
 
 class FakeAmap:
-    def static_map(self, points):
+    def static_map(self, points, overview=False):
         self.last_points = points
+        self.last_overview = overview
         return b"\x89PNG\r\n\x1a\nexample"
     def convert_gps(self, lon, lat):
         return lon + 0.01, lat + 0.01
@@ -95,6 +96,9 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(len(self.service.recordings()), 4)
         self.assertNotEqual(first["recordings"][0]["id"], first["recordings"][1]["id"])
         self.assertTrue(self.service.memory_map(first["id"]).startswith(b"\x89PNG"))
+        self.assertTrue(self.service.memories_map().startswith(b"\x89PNG"))
+        self.assertEqual(len(self.service.amap.last_points), 3)
+        self.assertTrue(self.service.amap.last_overview)
         self.assertEqual(len(self.service.memories()), 3)
 
     def test_conversation_history_includes_assistant_prompt(self):
