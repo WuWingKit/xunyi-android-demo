@@ -26,8 +26,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Release APK signature verification failed.' }
     $permissions = & (Join-Path $Sdk 'build-tools\36.0.0\aapt2.exe') dump permissions $output
     if ($LASTEXITCODE -ne 0) { throw 'Could not inspect release APK permissions.' }
-    if ($permissions -match 'android.permission.INTERNET') {
-        throw 'Public release must not request INTERNET permission.'
+    if (($permissions -join "`n") -notmatch 'android.permission.INTERNET') {
+        throw 'AMap URI pages require INTERNET permission.'
     }
 } finally {
     Remove-Item Env:XUNYI_RELEASE_STORE_PASS -ErrorAction SilentlyContinue

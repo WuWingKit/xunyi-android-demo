@@ -4,7 +4,7 @@
       "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "title": "和爷爷看电影的那个傍晚",
       "story": "妈妈记得第一次和爷爷去看电影。散场后，他们沿着街边慢慢走，电影院门口的香樟树是她最清楚的画面。哪一年、是哪家影院，还可以和家人一起核对。",
-      "place": {"name": "上海 · 人民广场附近", "source": "sample_location", "evidence": "家庭记忆中的区域线索；具体旧址待核对。"},
+      "place": {"name": "上海 · 人民广场附近", "mapLongitude": 121.4792, "mapLatitude": 31.2300, "coordinateSystem": "GCJ-02", "source": "sample_location", "evidence": "家庭记忆中的区域线索；具体旧址待核对。"},
       "recordingIds": ["11111111111111111111111111111111", "22222222222222222222222222222222"],
       "createdAt": "2026-09-20T12:00:00+08:00", "sample": true
     },
@@ -12,7 +12,7 @@
       "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "title": "外婆院子里的石榴树",
       "story": "外婆说，老院子里的石榴树每到秋天都会结满果子。孩子们放学回来，总要先跑到树下看一眼。",
-      "place": {"name": "苏州 · 平江路附近", "source": "sample_location", "evidence": "示例区域线索；具体旧址待核对。"},
+      "place": {"name": "苏州 · 平江路附近", "mapLongitude": 120.6338, "mapLatitude": 31.3190, "coordinateSystem": "GCJ-02", "source": "sample_location", "evidence": "示例区域线索；具体旧址待核对。"},
       "recordingIds": ["33333333333333333333333333333333"],
       "createdAt": "2026-09-20T11:00:00+08:00", "sample": true
     },
@@ -20,7 +20,7 @@
       "id": "cccccccccccccccccccccccccccccccc",
       "title": "第一次坐火车去远方",
       "story": "爸爸回忆第一次独自坐火车，站台上的广播和窗外掠过的灯光，至今记得。车站仍待家人核对。",
-      "place": {"name": "南京 · 南京站附近", "source": "sample_location", "evidence": "示例区域线索；具体车站待核对。"},
+      "place": {"name": "南京 · 南京站附近", "mapLongitude": 118.7965, "mapLatitude": 32.0887, "coordinateSystem": "GCJ-02", "source": "sample_location", "evidence": "示例区域线索；具体车站待核对。"},
       "recordingIds": ["44444444444444444444444444444444"],
       "createdAt": "2026-09-20T10:00:00+08:00", "sample": true
     }

@@ -5,6 +5,7 @@ import android.app.AlertDialog;
 import android.Manifest;
 import android.content.pm.PackageManager;
 import android.content.Intent;
+import android.net.Uri;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -28,6 +29,10 @@ import android.widget.TextView;
 import android.widget.ImageView;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
+import android.webkit.WebResourceError;
+import android.webkit.WebResourceRequest;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.File;
@@ -166,12 +171,24 @@ public final class MainActivity extends Activity {
         else if(remoteRecord!=null)openRecord(remoteRecord.optString("id"));else show("recordings");}
     private void map(LinearLayout target,String path){map(target,path,200);}
     private void map(LinearLayout target,String path,int height){
-        ImageView image=new ImageView(this);image.setAdjustViewBounds(true);image.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        image.setBackground(shape(0xFFEAE7DF,18));
-        target.addView(image,lp(-1,height));
-        TextView status=label("地图加载中…",16,SUB,false);target.addView(status,lp(-1,-2));
-        backend.image(path,(bitmap,error)->{if(bitmap!=null){image.setImageBitmap(bitmap);status.setVisibility(View.GONE);}
-            else status.setText(error);});
+        String url=backend.mapUrl(path);
+        if(url==null){text(target,"这段记忆还没有经过核对的地点，暂不在地图上标记。",16,SUB,false);return;}
+        TextView status=label("高德地图加载中…",16,SUB,false);target.addView(status,lp(-1,-2));
+        WebView view=new WebView(this);
+        view.setBackgroundColor(0xFFEAE7DF);
+        view.getSettings().setJavaScriptEnabled(true);
+        view.getSettings().setDomStorageEnabled(true);
+        view.getSettings().setAllowFileAccess(false);
+        view.getSettings().setAllowContentAccess(false);
+        view.setWebViewClient(new WebViewClient(){
+            @Override public void onPageFinished(WebView web,String loadedUrl){status.setVisibility(View.GONE);}
+            @Override public void onReceivedError(WebView web,WebResourceRequest request,WebResourceError error){
+                if(request.isForMainFrame())status.setText("地图加载失败；可点下方按钮在高德地图中查看。");
+            }
+        });
+        target.addView(view,lp(-1,height));
+        view.loadUrl(url);
+        smallAction(target,"在高德地图中打开",()->startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(url))));
     }
     private int audioResource(String asset){
         switch(asset){case "memory_1":return R.raw.memory_1;case "memory_2":return R.raw.memory_2;
@@ -329,7 +346,7 @@ public final class MainActivity extends Activity {
             LinearLayout mapCard=card(body);
             map(mapCard,"/v1/recordings/"+recordingId+"/places/map?selected="+selectedCandidateId,320);
             gap(mapCard,10);
-            text(mapCard,"示意图中的 A–"+(char)('A'+Math.min(candidates.length(),5)-1)+" 与下方候选对应，真实地点待核对。",16,SUB,false);
+            text(mapCard,"高德地图展示地点搜索结果；下方是交互演示候选，二者不自动对应，真实地点须由家人核对。",16,SUB,false);
             LinearLayout picks=horizontal();mapCard.addView(picks,lp(-1,-2));
             for(int i=0;i<candidates.length()&&i<5;i++){
                 JSONObject item=candidates.optJSONObject(i);if(item==null)continue;
@@ -471,7 +488,7 @@ public final class MainActivity extends Activity {
         text(body,"沿着地图，找回一家人的故事",17,SUB,false);gap(body,14);
         LinearLayout mapCard=card(body);
         map(mapCard,"/v1/memories/map",320);gap(mapCard,10);
-        text(mapCard,"点击下方 A、B、C，打开对应记忆。地图仅为离线示意，不用于导航。",16,SUB,false);
+        text(mapCard,"高德地图标出示例地点；点击下方 A、B、C 可打开对应记忆。示例位置并非历史地点的证明。",16,SUB,false);
         int markerIndex=0;
         for(int i=0;i<remoteMemories.length()&&i<10;i++){
             JSONObject item=remoteMemories.optJSONObject(i);if(item==null)continue;

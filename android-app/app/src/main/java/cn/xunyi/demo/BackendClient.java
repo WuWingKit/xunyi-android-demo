@@ -1,10 +1,7 @@
 package cn.xunyi.demo;
 
 import android.content.Context;
-import android.graphics.Bitmap;
-import android.graphics.Canvas;
-import android.graphics.Color;
-import android.graphics.Paint;
+import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
 import org.json.JSONArray;
@@ -19,7 +16,6 @@ import java.util.concurrent.Executors;
 /** Public-release data source: examples and edits never leave the device. */
 final class BackendClient {
     interface Callback { void done(JSONObject data, String error); }
-    interface ImageCallback { void done(Bitmap image, String error); }
     private static final String STATE_KEY = "public_demo_state_v1";
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -44,7 +40,27 @@ final class BackendClient {
                 store.put("backend_question", "");
                 save();
             }
+            migrateSampleCoordinates();
         } catch (Exception ex) { throw new IllegalStateException("Demo data unavailable", ex); }
+    }
+
+    private void migrateSampleCoordinates() throws Exception {
+        boolean changed = false;
+        JSONArray list = memories();
+        for (int i = 0; i < list.length(); i++) {
+            JSONObject memory = list.optJSONObject(i);
+            if (memory == null) continue;
+            JSONObject place = memory.optJSONObject("place");
+            if (place == null || !"sample_location".equals(place.optString("source")) || hasCoordinates(place)) continue;
+            String id = memory.optString("id");
+            if (id.startsWith("aaaa")) place.put("mapLongitude", 121.4792).put("mapLatitude", 31.2300);
+            else if (id.startsWith("bbbb")) place.put("mapLongitude", 120.6338).put("mapLatitude", 31.3190);
+            else if (id.startsWith("cccc")) place.put("mapLongitude", 118.7965).put("mapLatitude", 32.0887);
+            else continue;
+            place.put("coordinateSystem", "GCJ-02");
+            changed = true;
+        }
+        if (changed) save();
     }
 
     void get(String path, Callback callback) { request("GET", path, null, callback); }
@@ -228,59 +244,56 @@ final class BackendClient {
         throw new Exception("这个演示操作暂不可用");
     }
 
-    void image(String path, ImageCallback callback) {
-        worker.execute(() -> {
-            Bitmap bitmap = null; String error = null;
-            try { bitmap = schematicMap(path); } catch (Exception ex) { error = "地点示意图暂不可用"; }
-            Bitmap result = bitmap; String failure = error;
-            main.post(() -> callback.done(result, failure));
-        });
-    }
-    private Bitmap schematicMap(String path) {
-        Bitmap bitmap = Bitmap.createBitmap(900, 560, Bitmap.Config.ARGB_8888);
-        Canvas canvas = new Canvas(bitmap); canvas.drawColor(Color.rgb(245, 242, 233));
-        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        paint.setColor(Color.rgb(193, 219, 225)); paint.setStrokeWidth(56);
-        canvas.drawLine(0, 155, 900, 340, paint);
-        paint.setColor(Color.rgb(231, 220, 199)); paint.setStrokeWidth(11);
-        for (int i = -2; i < 7; i++) {
-            canvas.drawLine(i * 160, 0, i * 160 + 250, 560, paint);
-            canvas.drawLine(0, i * 130, 900, i * 130 + 75, paint);
-        }
-        paint.setColor(Color.rgb(55, 78, 61)); paint.setTextSize(31); paint.setFakeBoldText(true);
-        canvas.drawText("记忆地点示意图", 30, 55, paint);
-        paint.setTextSize(21); paint.setFakeBoldText(false);
-        canvas.drawText("离线演示 · 非导航地图 · 地点需人工核对", 30, 87, paint);
+    /** Official AMap URI API: no key, token, or private family data is bundled. */
+    String mapUrl(String path) {
         if ("/v1/memories/map".equals(path)) {
-            marker(canvas, 175, 260, "A", "上海");
-            marker(canvas, 445, 375, "B", "苏州");
-            marker(canvas, 715, 235, "C", "南京");
-        } else if (path.contains("/v1/recordings/") && path.contains("?selected=")) {
-            String[] segments = path.split("/");
-            JSONObject record = segments.length > 3 ? find(recordings(), segments[3]) : null;
-            JSONArray choices = record == null ? null : record.optJSONArray("candidates");
-            String selected = path.substring(path.indexOf("?selected=") + 10);
-            int total = choices == null ? 0 : Math.min(choices.length(), 5);
-            for (int i = 0; i < total; i++) {
-                JSONObject choice = choices.optJSONObject(i);
-                float x = 180 + i * (total == 1 ? 0 : 540f / (total - 1));
-                float y = i % 2 == 0 ? 285 : 370;
-                marker(canvas, x, y, String.valueOf((char)('A' + i)),
-                        choice != null && selected.equals(choice.optString("candidateId")) ? "当前选择" : "候选");
+            StringBuilder points = new StringBuilder();
+            JSONArray list = memories();
+            for (int i = 0; i < list.length() && i < 10; i++) {
+                JSONObject memory = list.optJSONObject(i);
+                JSONObject place = memory == null ? null : memory.optJSONObject("place");
+                if (!hasCoordinates(place)) continue;
+                if (points.length() > 0) points.append('|');
+                points.append(place.optDouble("mapLongitude")).append(',')
+                        .append(place.optDouble("mapLatitude")).append(',')
+                        .append((char) ('A' + i)).append('·').append(place.optString("name"));
             }
-        } else {
-            String city = path.contains("bbbb") || path.contains("3333") ? "苏州" :
-                    path.contains("cccc") || path.contains("4444") ? "南京" : "上海";
-            marker(canvas, 450, 292, "A", city);
+            return points.length() == 0 ? null : new Uri.Builder().scheme("https")
+                    .authority("uri.amap.com").path("/marker")
+                    .appendQueryParameter("markers", points.toString())
+                    .appendQueryParameter("src", "xunyi-demo")
+                    .appendQueryParameter("callnative", "0").build().toString();
         }
-        return bitmap;
+        String[] parts = path.split("/");
+        JSONObject place = null;
+        String query = "";
+        if (parts.length > 3 && "memories".equals(parts[2])) {
+            JSONObject memory = find(memories(), parts[3]);
+            if (memory != null) place = memory.optJSONObject("place");
+        } else if (parts.length > 3 && "recordings".equals(parts[2])) {
+            JSONObject recording = find(recordings(), parts[3]);
+            if (recording != null) {
+                place = recording.optJSONObject("placeBinding");
+                query = recording.optString("placeMention", "");
+            }
+        }
+        if (hasCoordinates(place)) return new Uri.Builder().scheme("https")
+                .authority("uri.amap.com").path("/marker")
+                .appendQueryParameter("position", place.optDouble("mapLongitude") + "," + place.optDouble("mapLatitude"))
+                .appendQueryParameter("name", place.optString("name"))
+                .appendQueryParameter("coordinate", "gaode")
+                .appendQueryParameter("src", "xunyi-demo")
+                .appendQueryParameter("callnative", "0").build().toString();
+        if (query.trim().isEmpty()) return null;
+        return new Uri.Builder().scheme("https").authority("uri.amap.com").path("/search")
+                .appendQueryParameter("keyword", query.trim())
+                .appendQueryParameter("src", "xunyi-demo")
+                .appendQueryParameter("callnative", "0").build().toString();
     }
-    private static void marker(Canvas canvas, float x, float y, String letter, String city) {
-        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        paint.setColor(Color.rgb(166, 82, 56)); canvas.drawCircle(x, y, 26, paint);
-        paint.setColor(Color.WHITE); paint.setTextSize(25); paint.setFakeBoldText(true);
-        canvas.drawText(letter, x - 9, y + 9, paint);
-        paint.setColor(Color.rgb(44, 54, 45)); paint.setTextSize(26);
-        canvas.drawText(city, x - 30, y + 61, paint);
+    private static boolean hasCoordinates(JSONObject place) {
+        return place != null && place.has("mapLongitude") && place.has("mapLatitude")
+                && !place.isNull("mapLongitude") && !place.isNull("mapLatitude")
+                && Math.abs(place.optDouble("mapLongitude")) <= 180
+                && Math.abs(place.optDouble("mapLatitude")) <= 90;
     }
 }
