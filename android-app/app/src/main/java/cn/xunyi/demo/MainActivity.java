@@ -71,7 +71,7 @@ public final class MainActivity extends Activity {
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         store=new DemoStore(this);
-        backend=new BackendClient(store);
+        backend=new BackendClient(this,store);
         voiceTts=new TextToSpeech(this,status->{
             if(status==TextToSpeech.SUCCESS && voiceTts!=null){
                 ttsReady=voiceTts.setLanguage(Locale.CHINA)>=0;
@@ -325,11 +325,11 @@ public final class MainActivity extends Activity {
                 JSONObject first=candidates.optJSONObject(0);
                 if(first!=null)selectedCandidateId=first.optString("candidateId","");
             }
-            text(body,"高德地图 · 地点候选",22,INK,true);gap(body,10);
+            text(body,"离线示意图 · 地点候选",22,INK,true);gap(body,10);
             LinearLayout mapCard=card(body);
-            map(mapCard,"/v1/recordings/"+recordingId+"/places/map",320);
+            map(mapCard,"/v1/recordings/"+recordingId+"/places/map?selected="+selectedCandidateId,320);
             gap(mapCard,10);
-            text(mapCard,"地图上的 A–E 与下方候选对应。",16,SUB,false);
+            text(mapCard,"示意图中的 A–"+(char)('A'+Math.min(candidates.length(),5)-1)+" 与下方候选对应，真实地点待核对。",16,SUB,false);
             LinearLayout picks=horizontal();mapCard.addView(picks,lp(-1,-2));
             for(int i=0;i<candidates.length()&&i<5;i++){
                 JSONObject item=candidates.optJSONObject(i);if(item==null)continue;
@@ -471,7 +471,7 @@ public final class MainActivity extends Activity {
         text(body,"沿着地图，找回一家人的故事",17,SUB,false);gap(body,14);
         LinearLayout mapCard=card(body);
         map(mapCard,"/v1/memories/map",320);gap(mapCard,10);
-        text(mapCard,"点击下方 A、B、C，打开对应记忆。",16,SUB,false);
+        text(mapCard,"点击下方 A、B、C，打开对应记忆。地图仅为离线示意，不用于导航。",16,SUB,false);
         int markerIndex=0;
         for(int i=0;i<remoteMemories.length()&&i<10;i++){
             JSONObject item=remoteMemories.optJSONObject(i);if(item==null)continue;
@@ -725,7 +725,7 @@ public final class MainActivity extends Activity {
             .setNegativeButton("取消",null).show();}
     private void exportText(){Intent i=new Intent(Intent.ACTION_SEND);i.setType("text/plain");i.putExtra(Intent.EXTRA_SUBJECT,title());i.putExtra(Intent.EXTRA_TEXT,title()+"\n\n"+story()+"\n\n转写："+transcript());startActivity(Intent.createChooser(i,"导出记忆文字"));}
     private void confirmDelete(){new AlertDialog.Builder(this).setTitle("彻底删除这条记忆？")
-            .setMessage("将删除本机及已连接服务中的这条录音地点数据、共忆文字和整理内容，并清除分享选择。操作无法撤销。")
+            .setMessage("将删除本机的录音地点数据、共忆文字和整理内容，并清除分享选择。操作无法撤销。")
             .setPositiveButton("彻底删除",(d,w)->deleteRemoteThen(()->{
                 store.put("deleted",true);store.put("saved",false);store.put("shared",false);
                 store.put("place_added",false);store.put("backend_recording_id","");store.put("backend_place_json","{}");
@@ -736,7 +736,7 @@ public final class MainActivity extends Activity {
         String session=store.get("conversation_id","");
         if(!session.isEmpty()){
             backend.delete("/v1/conversations/"+session,(data,error)->{
-                if(error!=null&&!error.contains("not found")){message("服务器删除未完成："+error+" 本机数据仍保留，请重试。 ");return;}
+                if(error!=null&&!error.contains("不存在")){message("本机删除未完成："+error+" 请重试。 ");return;}
                 store.put("conversation_id","");deleteRemoteRecordingThen(success);
             });
         }else deleteRemoteRecordingThen(success);
@@ -745,7 +745,7 @@ public final class MainActivity extends Activity {
         String id=store.get("backend_recording_id","");
         if(id.isEmpty()){success.run();return;}
         backend.delete("/v1/recordings/"+id,(data,error)->{
-            if(error!=null&&!error.contains("not found")){message("服务器删除未完成："+error+" 本机数据仍保留，请重试。 ");return;}
+            if(error!=null&&!error.contains("不存在")){message("本机删除未完成："+error+" 请重试。 ");return;}
             store.put("backend_recording_id","");success.run();
         });
     }

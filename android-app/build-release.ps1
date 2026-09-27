@@ -1,5 +1,5 @@
 param(
-    [string]$SigningConfig = 'C:\Users\small\.codex\xunyi-private\release-signing.json',
+    [string]$SigningConfig = $env:XUNYI_SIGNING_CONFIG,
     [string]$Sdk = 'E:\Android\Sdk',
     [string]$Jdk = 'C:\Program Files\Java\jdk-21'
 )
@@ -7,8 +7,8 @@ $ErrorActionPreference = 'Stop'
 $base = Split-Path -Parent $MyInvocation.MyCommand.Path
 $build = Join-Path $base 'build-manual'
 $output = Join-Path $build 'xunyi-v0.0.1-alpha.apk'
-if (-not (Test-Path -LiteralPath $SigningConfig)) {
-    throw 'Release signing config missing. Keep the keystore and config outside the repository.'
+if (-not $SigningConfig -or -not (Test-Path -LiteralPath $SigningConfig)) {
+    throw 'Set XUNYI_SIGNING_CONFIG or pass -SigningConfig. Keep the keystore and config outside the repository.'
 }
 $signing = Get-Content -LiteralPath $SigningConfig -Raw | ConvertFrom-Json
 if (-not (Test-Path -LiteralPath $signing.keystore)) { throw 'Release keystore missing.' }
@@ -24,6 +24,11 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Release APK signing failed.' }
     & (Join-Path $Sdk 'build-tools\36.0.0\apksigner.bat') verify --verbose $output
     if ($LASTEXITCODE -ne 0) { throw 'Release APK signature verification failed.' }
+    $permissions = & (Join-Path $Sdk 'build-tools\36.0.0\aapt2.exe') dump permissions $output
+    if ($LASTEXITCODE -ne 0) { throw 'Could not inspect release APK permissions.' }
+    if ($permissions -match 'android.permission.INTERNET') {
+        throw 'Public release must not request INTERNET permission.'
+    }
 } finally {
     Remove-Item Env:XUNYI_RELEASE_STORE_PASS -ErrorAction SilentlyContinue
     Remove-Item Env:XUNYI_RELEASE_KEY_PASS -ErrorAction SilentlyContinue
