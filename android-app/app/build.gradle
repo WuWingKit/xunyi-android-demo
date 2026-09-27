@@ -12,21 +12,4 @@ android {
     }
     buildTypes { release { minifyEnabled false } }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
-    sourceSets.main.java.srcDir(layout.buildDirectory.dir('generated/source/demoCredential/java'))
 }
-
-def credentialSource = layout.buildDirectory.file('generated/source/demoCredential/java/cn/xunyi/demo/DemoCredential.java')
-tasks.register('generateDemoCredential') {
-    outputs.file(credentialSource)
-    doLast {
-        def tokenPath = System.getenv('XUNYI_DEMO_TOKEN_FILE') ?: 'C:\\Users\\small\\.codex\\xunyi-private\\app-token.txt'
-        def tokenFile = file(tokenPath)
-        if (!tokenFile.isFile()) throw new GradleException('Set XUNYI_DEMO_TOKEN_FILE to a private demo token file.')
-        def token = tokenFile.getText('UTF-8').trim()
-        if (!(token ==~ /[a-fA-F0-9]{64,128}/)) throw new GradleException('Demo token format invalid.')
-        def output = credentialSource.get().asFile
-        output.parentFile.mkdirs()
-        output.setText('package cn.xunyi.demo; final class DemoCredential { static final String TOKEN = "' + token + '"; }', 'UTF-8')
-    }
-}
-tasks.named('preBuild').configure { dependsOn tasks.named('generateDemoCredential') }

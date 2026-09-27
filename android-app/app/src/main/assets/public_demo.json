@@ -1,0 +1,35 @@
+{
+  "memories": [
+    {
+      "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "title": "和爷爷看电影的那个傍晚",
+      "story": "妈妈记得第一次和爷爷去看电影。散场后，他们沿着街边慢慢走，电影院门口的香樟树是她最清楚的画面。哪一年、是哪家影院，还可以和家人一起核对。",
+      "place": {"name": "上海 · 人民广场附近", "source": "sample_location", "evidence": "家庭记忆中的区域线索；具体旧址待核对。"},
+      "recordingIds": ["11111111111111111111111111111111", "22222222222222222222222222222222"],
+      "createdAt": "2026-09-20T12:00:00+08:00", "sample": true
+    },
+    {
+      "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "title": "外婆院子里的石榴树",
+      "story": "外婆说，老院子里的石榴树每到秋天都会结满果子。孩子们放学回来，总要先跑到树下看一眼。",
+      "place": {"name": "苏州 · 平江路附近", "source": "sample_location", "evidence": "示例区域线索；具体旧址待核对。"},
+      "recordingIds": ["33333333333333333333333333333333"],
+      "createdAt": "2026-09-20T11:00:00+08:00", "sample": true
+    },
+    {
+      "id": "cccccccccccccccccccccccccccccccc",
+      "title": "第一次坐火车去远方",
+      "story": "爸爸回忆第一次独自坐火车，站台上的广播和窗外掠过的灯光，至今记得。车站仍待家人核对。",
+      "place": {"name": "南京 · 南京站附近", "source": "sample_location", "evidence": "示例区域线索；具体车站待核对。"},
+      "recordingIds": ["44444444444444444444444444444444"],
+      "createdAt": "2026-09-20T10:00:00+08:00", "sample": true
+    }
+  ],
+  "recordings": [
+    {"id": "11111111111111111111111111111111", "transcript": "第一次和你爷爷看电影，是个傍晚。电影院门口有一棵很大的香樟树。", "placeMention": "上海 · 人民广场附近", "audioAsset": "memory_1", "createdAt": "2026-09-20T08:42:00+08:00", "placeBinding": null, "candidates": []},
+    {"id": "22222222222222222222222222222222", "transcript": "电影散场以后，我们沿着街走了很久。我还记得他给我买了一包热栗子。", "placeMention": "上海 · 人民广场附近", "audioAsset": "memory_2", "createdAt": "2026-09-20T08:43:00+08:00", "placeBinding": null, "candidates": []},
+    {"id": "33333333333333333333333333333333", "transcript": "外婆家院子里有一棵石榴树，秋天的时候，果子红得很。", "placeMention": "苏州 · 平江路附近", "audioAsset": "memory_3", "createdAt": "2026-09-20T08:44:00+08:00", "placeBinding": null, "candidates": []},
+    {"id": "44444444444444444444444444444444", "transcript": "第一次一个人坐火车，我在站台上听着广播，心里又紧张又高兴。", "placeMention": "南京 · 南京站附近", "audioAsset": "memory_4", "createdAt": "2026-09-20T08:45:00+08:00", "placeBinding": null, "candidates": []}
+  ],
+  "conversations": []
+}
