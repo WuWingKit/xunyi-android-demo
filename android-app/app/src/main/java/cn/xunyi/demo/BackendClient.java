@@ -2,6 +2,8 @@ package cn.xunyi.demo;
 
 import android.os.Handler;
 import android.os.Looper;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 
 import org.json.JSONObject;
 
@@ -17,22 +19,22 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/** Small async HTTPS client. Server credentials are entered on-device, never compiled into the APK. */
+/** Small async HTTPS client for the configured demo service. */
 final class BackendClient {
     interface Callback { void done(JSONObject data, String error); }
-    private final DemoStore store;
+    interface ImageCallback { void done(Bitmap image, String error); }
     private final ExecutorService executor=Executors.newSingleThreadExecutor();
     private final Handler main=new Handler(Looper.getMainLooper());
-    BackendClient(DemoStore store){this.store=store;}
-    boolean configured(){return !store.get("backend_token","").isEmpty();}
+    BackendClient(DemoStore store){}
+    boolean configured(){return !DemoCredential.TOKEN.isEmpty();}
+    void get(String path,Callback callback){request("GET",path,null,callback);}
     void post(String path,JSONObject payload,Callback callback){request("POST",path,payload,callback);}
     void delete(String path,Callback callback){request("DELETE",path,null,callback);}
     private void request(String method,String path,JSONObject payload,Callback callback){
-        String savedBase=store.get("backend_url",BackendConfig.DEFAULT_URL);
-        final String base=savedBase.isEmpty()?BackendConfig.DEFAULT_URL:savedBase;
-        String token=store.get("backend_token","");
-        if(!BackendConfig.valid(base)||token.isEmpty()){
-            main.post(()->callback.done(null,"请先在“我的”填写服务访问令牌。"));return;
+        final String base=BackendConfig.DEFAULT_URL;
+        String token=DemoCredential.TOKEN;
+        if(token.isEmpty()){
+            main.post(()->callback.done(null,"服务尚未配置。"));return;
         }
         executor.execute(()->{
             JSONObject result=null;String error=null;HttpURLConnection connection=null;
@@ -60,6 +62,22 @@ final class BackendClient {
             finally{if(connection!=null)connection.disconnect();}
             final JSONObject data=result;final String failure=error;
             main.post(()->callback.done(data,failure));
+        });
+    }
+    void image(String path,ImageCallback callback){
+        executor.execute(()->{
+            Bitmap bitmap=null;String error=null;HttpURLConnection connection=null;
+            try{
+                connection=(HttpURLConnection)new URL(BackendConfig.DEFAULT_URL+path).openConnection();
+                connection.setConnectTimeout(7000);connection.setReadTimeout(9000);
+                connection.setRequestProperty("Authorization","Bearer "+DemoCredential.TOKEN);
+                if(connection.getResponseCode()!=200)throw new Exception("image status");
+                try(InputStream in=connection.getInputStream()) { bitmap=BitmapFactory.decodeStream(in); }
+                if(bitmap==null)throw new Exception("image decode");
+            }catch(Exception ex){error="地图暂时无法加载，地点文字仍可查看。";}
+            finally{if(connection!=null)connection.disconnect();}
+            final Bitmap found=bitmap;final String failure=error;
+            main.post(()->callback.done(found,failure));
         });
     }
     void close(){executor.shutdownNow();}

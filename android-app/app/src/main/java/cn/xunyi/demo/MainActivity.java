@@ -20,6 +20,9 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.TextView;
+import android.widget.ImageView;
+import android.widget.RadioButton;
+import android.widget.RadioGroup;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -41,6 +44,13 @@ public final class MainActivity extends Activity {
     private TextView progressText;
     private Button playButton;
     private String notice="";
+    private JSONArray remoteMemories=new JSONArray();
+    private JSONArray remoteRecordings=new JSONArray();
+    private JSONObject remoteMemory, remoteRecord, remoteConversation;
+    private String selectedMemoryId="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    private String selectedCandidateId="";
+    private String placeReturn="record";
+    private boolean loadingMemories=false;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -49,14 +59,18 @@ public final class MainActivity extends Activity {
         getWindow().setStatusBarColor(BG);
         getWindow().setNavigationBarColor(BG);
         show("home");
+        loadMemories();
+        loadRecordings();
     }
     @Override protected void onDestroy() { releaseAudio();backend.close(); super.onDestroy(); }
     @Override public void onBackPressed() {
         if(page.equals("home")||page.equals("memories")||page.equals("prompts")||page.equals("mine")) { show("home"); return; }
         if(page.equals("edit")) show("record");
-        else if(page.equals("place")) show("record");
+        else if(page.equals("place")) returnFromPlace();
         else if(page.equals("share")) show("memory");
         else if(page.equals("memory")) show("memories");
+        else if(page.equals("record")) show("recordings");
+        else if(page.equals("recordings")) show("home");
         else show("home");
     }
     private int dp(float n){return Math.round(n*getResources().getDisplayMetrics().density);}
@@ -73,7 +87,79 @@ public final class MainActivity extends Activity {
     private void addButton(LinearLayout to,String title,boolean primary,Runnable action){to.addView(button(title,primary,action),lp(-1,-2));}
     private void smallAction(LinearLayout to,String title,Runnable action){Button b=button(title,false,action);to.addView(b,lp(-1,-2));}
     private void message(String value){notice=value;render();}
-    private void show(String next){releaseAudio();page=next;render();}
+    private void loadMemories(){
+        if(loadingMemories)return;loadingMemories=true;
+        backend.get("/v1/memories",(data,error)->{
+            loadingMemories=false;
+            if(data!=null){remoteMemories=data.optJSONArray("memories");if(remoteMemories==null)remoteMemories=new JSONArray();}
+            else if(error!=null)notice="记忆暂时没有更新："+error;
+            render();
+        });
+    }
+    private void loadRecordings(){
+        backend.get("/v1/recordings",(data,error)->{
+            if(data!=null){remoteRecordings=data.optJSONArray("recordings");
+                if(remoteRecordings==null)remoteRecordings=new JSONArray();render();}
+            else if(error!=null){notice="录音暂时没有更新："+error;render();}
+        });
+    }
+    private void openRecord(String id){
+        backend.get("/v1/recordings/"+id,(data,error)->{
+            if(data==null){message("录音暂时无法打开："+error);return;}
+            remoteRecord=data;storePlaceResponse(data);show("record");
+        });
+    }
+    private void openMemory(String id){
+        selectedMemoryId=id;
+        backend.get("/v1/memories/"+id,(data,error)->{
+            if(data==null){message("记忆暂时无法打开："+error);return;}
+            remoteMemory=data;show("memory");
+        });
+    }
+    private void openPlace(String recordingId){
+        placeReturn="memory";selectedCandidateId="";
+        backend.get("/v1/recordings/"+recordingId,(data,error)->{
+            if(data==null){message("地点线索暂时无法打开："+error);return;}
+            storePlaceResponse(data);show("place");
+        });
+    }
+    private void returnFromPlace(){if(placeReturn.equals("memory"))openMemory(selectedMemoryId);
+        else if(remoteRecord!=null)openRecord(remoteRecord.optString("id"));else show("recordings");}
+    private void map(LinearLayout target,String path){
+        ImageView image=new ImageView(this);image.setAdjustViewBounds(true);image.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        image.setBackground(shape(0xFFEAE7DF,18));
+        target.addView(image,lp(-1,200));
+        TextView status=label("地图加载中…",16,SUB,false);target.addView(status,lp(-1,-2));
+        backend.image(path,(bitmap,error)->{if(bitmap!=null){image.setImageBitmap(bitmap);status.setVisibility(View.GONE);}
+            else status.setText(error);});
+    }
+    private int audioResource(String asset){
+        switch(asset){case "memory_1":return R.raw.memory_1;case "memory_2":return R.raw.memory_2;
+            case "memory_3":return R.raw.memory_3;case "memory_4":return R.raw.memory_4;default:return 0;}
+    }
+    private String audioLength(int resource){
+        MediaPlayer sample=MediaPlayer.create(this,resource);
+        if(sample==null)return "";
+        String duration=formatTime(sample.getDuration());sample.release();return duration;
+    }
+    private void playSource(int resource,Button button){
+        try{
+            releaseAudio();
+            media=MediaPlayer.create(this,resource);
+            if(media==null)throw new IllegalStateException("audio unavailable");
+            playButton=button;button.setText("正在播放 · 点击暂停");
+            media.setOnCompletionListener(m->{button.setText("▶ 再听一次");releaseAudio();});
+            media.start();
+            button.setOnClickListener(v->{if(media!=null&&media.isPlaying()){media.pause();button.setText("▶ 继续播放");}
+                else if(media!=null){media.start();button.setText("正在播放 · 点击暂停");}});
+        }catch(Exception ex){message("音频暂时无法播放。");}
+    }
+    private void show(String next){releaseAudio();page=next;render();if(next.equals("prompts"))loadConversation();}
+    private void loadConversation(){
+        String id=store.get("conversation_id","");
+        if(id.isEmpty())return;
+        backend.get("/v1/conversations/"+id,(data,error)->{if(data!=null){remoteConversation=data;render();}});
+    }
     private void render(){
         root=vertical();root.setBackgroundColor(BG);
         root.setOnApplyWindowInsetsListener((view,insets)->{
@@ -88,6 +174,7 @@ public final class MainActivity extends Activity {
         switch(page){
             case "home": home();break;
             case "record": record();break;
+            case "recordings": recordings();break;
             case "edit": edit();break;
             case "memories": memories();break;
             case "memory": memory();break;
@@ -102,7 +189,7 @@ public final class MainActivity extends Activity {
     }
     private void header(String title,String subtitle){text(body,title,30,INK,true);gap(body,4);text(body,subtitle,16,SUB,false);gap(body,22);}
     private void back(String title,Runnable action){smallAction(body,"‹ 返回",action);gap(body,16);text(body,title,30,INK,true);gap(body,20);}
-    private boolean connected(){return store.get("connected",true);}
+    private boolean connected(){return store.get("connected",false);}
     private boolean synced(){return store.get("synced",false);}
     private boolean saved(){return store.get("saved",false);}
     private boolean deleted(){return store.get("deleted",false);}
@@ -133,64 +220,65 @@ public final class MainActivity extends Activity {
         nav.addView(t,new LinearLayout.LayoutParams(0,-2,1));t.setOnClickListener(v->show(target));
     }
     private void home(){
-        header("首页","先看记忆珠，再听最近的故事");
-        LinearLayout hero=card(body);hero.setBackground(shape(0xFFFFFDFC,30));
-        text(hero,"声音记忆珠",18,INK,true);gap(hero,12);
-        if(!connected()){
-            text(hero,"○ 记忆珠未连接",20,WARN,true);gap(hero,6);
-            text(hero,"请打开记忆珠并靠近手机。",16,SUB,false);gap(hero,18);
-            addButton(hero,"连接记忆珠",true,()->show("connect"));
-        } else if(syncing){
-            text(hero,"↻ 正在同步 · "+syncProgress+"%",20,GREEN,true);gap(hero,8);
-            text(hero,"正在把录音传到手机",16,SUB,false);gap(hero,12);
-            View track=new View(this);track.setBackground(shape(LINE,6));hero.addView(track,lp(-1,8));gap(hero,16);
-            smallAction(hero,"查看同步异常",this::failSync);
-        } else if(!synced()&&!deleted()){
-            text(hero,"● 已连接 · 1 条录音待同步",20,INK,true);gap(hero,8);
-            text(hero,store.get("sync_failed",false)?"! 上次同步未完成。录音仍保存在记忆珠中，请靠近手机重试。":"录音仍保存在记忆珠中，尚未进入手机。",16,SUB,false);gap(hero,18);
-            addButton(hero,store.get("sync_failed",false)?"重新同步":"同步录音",true,this::startSync);
-        } else {
-            text(hero,"✓ 已连接 · 录音已同步",20,GREEN,true);gap(hero,8);
-            text(hero,"录音已保存在手机中，可以随时回听。",16,SUB,false);gap(hero,18);
-            if(!deleted()) addButton(hero,"查看最近录音",true,()->show("record"));
-        }
-        gap(body,4);text(body,"最近录音",22,INK,true);gap(body,12);
-        if(!synced()||deleted()){
-            LinearLayout c=card(body);text(c,"这里会保存记忆珠录下的声音。",18,INK,true);gap(c,8);text(c,"按下记忆珠按钮录音后，连接手机即可同步。",16,SUB,false);
-        } else {
-            LinearLayout c=card(body);text(c,"今天 08:42  ·  18 秒",16,SUB,false);gap(c,8);
-            text(c,transcript(),18,INK,true);gap(c,8);text(c,"✓ 已同步至手机 · 仅自己可见",16,GREEN,false);gap(c,16);
-            addButton(c,"查看这段录音",false,()->show("record"));
-        }
+        header("寻忆","把熟悉的声音，留在家里");
+        LinearLayout device=card(body);device.setBackground(shape(0xFFFFFDFC,30));
+        text(device,"声音记忆珠",18,INK,true);gap(device,12);
+        text(device,"○ 当前未连接",20,INK,true);gap(device,6);
+        text(device,"已保存的记忆和讲述仍可浏览。",16,SUB,false);gap(device,16);
+        addButton(device,"浏览家庭记忆",true,()->show("memories"));
+        gap(body,4);text(body,"最近记忆",22,INK,true);gap(body,12);
+        if(remoteMemories.length()>0){
+            JSONObject item=remoteMemories.optJSONObject(0);
+            if(item!=null){LinearLayout c=card(body);text(c,item.optString("title"),22,INK,true);gap(c,8);
+                text(c,item.optString("story"),18,INK,false);gap(c,8);
+                JSONObject place=item.optJSONObject("place");
+                text(c,item.optInt("sourceCount")+" 段录音 · "+(place==null?"地点待确认":place.optString("name")),16,SUB,false);gap(c,12);
+                addButton(c,"查看记忆",false,()->openMemory(item.optString("id")));}
+        }else{LinearLayout c=card(body);text(c,"记忆正在加载",18,INK,false);}
+        LinearLayout inbox=card(body);text(inbox,"讲述录音",21,INK,true);gap(inbox,8);
+        text(inbox,remoteRecordings.length()+" 段讲述已收录",17,SUB,false);gap(inbox,12);
+        smallAction(inbox,"查看全部录音",()->show("recordings"));
     }
-    private void startSync(){if(syncing)return;syncing=true;syncProgress=0;store.put("sync_failed",false);render();advanceSync();}
-    private void advanceSync(){handler.postDelayed(()->{if(!syncing)return;syncProgress+=25;if(syncProgress>=100){syncing=false;syncProgress=100;store.put("synced",true);message("✓ 同步完成。录音已出现在手机中，可以回听。 ");}else{render();advanceSync();}},450);}
-    private void failSync(){syncing=false;store.put("sync_failed",true);message("! 同步未完成。录音仍保存在记忆珠中，靠近手机后点“重新同步”。");}
+    private void recordings(){
+        back("讲述录音",()->show("home"));
+        text(body,"每段讲述都独立保存，可一起整理成记忆。",17,SUB,false);gap(body,16);
+        for(int i=0;i<remoteRecordings.length();i++){
+            JSONObject item=remoteRecordings.optJSONObject(i);if(item==null)continue;
+            LinearLayout c=card(body);text(c,item.optString("transcript"),18,INK,true);gap(c,8);
+            text(c,item.optInt("memoryCount")+" 条关联记忆",16,SUB,false);gap(c,12);
+            addButton(c,"查看讲述与地点",false,()->openRecord(item.optString("id")));
+        }
+        if(remoteRecordings.length()==0){LinearLayout c=card(body);text(c,"录音正在加载",18,INK,false);}
+    }
     private void record(){
-        back("录音详情",()->show("home"));
-        text(body,"今天 08:42 · 18 秒",16,SUB,false);gap(body,8);
-        text(body,"一段在旧电影院想起的话",23,INK,true);gap(body,16);
-        player(body);
-        LinearLayout c=card(body);text(c,"语音文字",21,INK,true);gap(c,6);text(c,"可按记忆修改文字，录音会单独保留。",16,SUB,false);gap(c,12);
-        text(c,transcript(),18,INK,false);gap(c,14);smallAction(c,"修改转写文字",()->editTranscript());
-        LinearLayout place=card(body);text(place,"地点线索",20,INK,true);gap(place,8);
-        text(place,placeSummary(),17,SUB,false);gap(place,12);
-        smallAction(place,"核对地点",()->show("place"));
-        if(!saved()){addButton(body,"整理成记忆",true,()->show("edit"));gap(body,10);smallAction(body,"只保存原声，稍后整理",()->message("原声已保留在“录音”。整理和分享都可以稍后进行。"));}
-        else addButton(body,"查看已保存的记忆",true,()->show("memory"));
+        back("讲述详情",()->show("recordings"));
+        if(remoteRecord==null){text(body,"录音正在加载",18,INK,false);return;}
+        int audio=audioResource(remoteRecord.optString("audioAsset"));
+        LinearLayout voice=card(body);text(voice,"这段讲述",21,INK,true);gap(voice,10);
+        text(voice,remoteRecord.optString("transcript"),18,INK,false);gap(voice,14);
+        if(audio!=0){Button play=button("▶ 播放讲述 · "+audioLength(audio),true,()->{});
+            play.setOnClickListener(v->playSource(audio,play));voice.addView(play,lp(-1,-2));
+            gap(voice,8);text(voice,"示例讲述使用演示配音。",16,SUB,false);
+        }else text(voice,"音频尚未同步",16,SUB,false);
+        LinearLayout location=card(body);text(location,"地点线索",21,INK,true);gap(location,8);
+        JSONObject binding=remoteRecord.optJSONObject("placeBinding");
+        if(binding!=null){text(location,binding.optString("name","已确认地点"),18,INK,false);gap(location,10);
+            map(location,"/v1/recordings/"+remoteRecord.optString("id")+"/places/map");gap(location,8);}
+        else text(location,"还没有确认地点",17,SUB,false);
+        gap(location,12);smallAction(location,"在地图上核对地点",()->{placeReturn="record";show("place");});
     }
     private void place(){
-        back("地点绑定",()->show("record"));
+        back("地点绑定",this::returnFromPlace);
         text(body,"先看依据，再决定地点",17,SUB,false);gap(body,16);
         JSONObject data=placeData();JSONObject binding=data.optJSONObject("placeBinding");
         if(binding!=null){
             LinearLayout bound=card(body);text(bound,placeSummary(),21,GREEN,true);gap(bound,8);
             text(bound,binding.optString("evidence",""),17,INK,false);gap(bound,8);
+            if(!store.get("backend_recording_id","").isEmpty()){map(bound,"/v1/recordings/"+store.get("backend_recording_id","")+"/places/map");gap(bound,8);}
             if(!binding.optString("mapAddress","").isEmpty())text(bound,"高德当前地址："+binding.optString("mapAddress"),16,SUB,false);
-            text(bound,"坐标："+binding.optString("longitude")+", "+binding.optString("latitude")+" · "+binding.optString("coordinateSystem"),16,SUB,false);
         }
         LinearLayout search=card(body);text(search,"讲述中提到的地点",20,INK,true);gap(search,8);
-        EditText mention=input(data.optString("placeMention","旧电影院"),1);mention.setSingleLine(true);search.addView(mention,lp(-1,-2));gap(search,8);
+        EditText mention=input(data.optString("placeMention","旧电影院").replace(" · ","").replace("附近",""),1);mention.setSingleLine(true);search.addView(mention,lp(-1,-2));gap(search,8);
         text(search,"可输入地标、街道或建筑名称，再核对地图结果。",16,SUB,false);gap(search,14);
         addButton(search,"搜索地点候选",true,()->{
             String query=mention.getText().toString().trim();if(query.length()<2){mention.setError("请填写至少两个字");return;}
@@ -199,25 +287,34 @@ public final class MainActivity extends Activity {
                 JSONObject payload=new JSONObject();try{payload.put("transcript",transcript());payload.put("placeMention",query);}catch(Exception ignored){}
                 backend.post("/v1/recordings",payload,(result,error)->{
                     if(error!=null){message("地点搜索未完成："+error+" 录音仍在本机。");return;}
-                    storePlaceResponse(result);message("已找到候选，请核对名称和地址后确认绑定。 ");
+                    selectedCandidateId="";storePlaceResponse(result);message("已找到候选，请核对名称和地址后确认绑定。");
                 });
             }else{
                 JSONObject payload=new JSONObject();try{payload.put("query",query);}catch(Exception ignored){}
                 backend.post("/v1/recordings/"+id+"/places/search",payload,(result,error)->{
                     if(error!=null){message("地点搜索未完成："+error+" 原有录音与绑定未改变。");return;}
-                    storePlaceResponse(result);message("候选已更新，请确认具体地点。 ");
+                    selectedCandidateId="";storePlaceResponse(result);message("候选已更新，请确认具体地点。");
                 });
             }
         });
         JSONArray candidates=data.optJSONArray("candidates");
         if(candidates!=null&&candidates.length()>0){
             text(body,"待确认候选",22,INK,true);gap(body,10);
+            LinearLayout mapCard=card(body);
+            text(mapCard,"地图位置",20,INK,true);gap(mapCard,10);
+            String rid=store.get("backend_recording_id","");
+            String mapPath="/v1/recordings/"+rid+"/places/map";
+            if(!selectedCandidateId.isEmpty())mapPath="/v1/recordings/"+rid+"/places/candidates/"+selectedCandidateId+"/map";
+            map(mapCard,mapPath);gap(mapCard,8);
+            text(mapCard,"点选下方地点，地图会聚焦该标点。",16,SUB,false);
             for(int i=0;i<candidates.length();i++){
                 JSONObject item=candidates.optJSONObject(i);if(item==null)continue;
                 LinearLayout c=card(body);text(c,item.optString("name","未知地点"),20,INK,true);gap(c,7);
                 text(c,item.optString("city","")+item.optString("district","")+" "+item.optString("address",""),16,SUB,false);gap(c,7);
                 text(c,item.optString("evidence",""),16,SUB,false);gap(c,12);
                 String candidateId=item.optString("candidateId","");
+                if(candidateId.equals(selectedCandidateId)){text(c,"✓ 当前选中",16,GREEN,true);gap(c,8);}
+                smallAction(c,"在地图上查看",()->{selectedCandidateId=candidateId;render();});gap(c,8);
                 smallAction(c,"确认绑定此地点",()->new AlertDialog.Builder(this).setTitle("确认这是故事中的地点？")
                         .setMessage(item.optString("name")+"\n"+item.optString("address")+"\n请依据讲述内容核对。")
                         .setPositiveButton("确认绑定",(dialog,which)->{
@@ -229,26 +326,9 @@ public final class MainActivity extends Activity {
                         }).setNegativeButton("再看看",null).show());
             }
         }
-        if(candidates!=null&&candidates.length()==0&&data.optJSONObject("placeBinding")==null){
+        if(candidates!=null&&candidates.length()==0&&data.optJSONObject("placeBinding")==null&&!data.optString("mentionSource").equals("sample")){
             text(body,"没有找到合适的地点。可试试附近的地标或街道名称。",16,SUB,false);gap(body,12);
         }
-        LinearLayout gpsCard=card(body);text(gpsCard,"录音时的位置",20,INK,true);gap(gpsCard,8);
-        text(gpsCard,"这段示例录音附有位置记录：上海市人民广场附近 · 今天 08:42。",17,SUB,false);gap(gpsCard,12);
-        smallAction(gpsCard,"使用这条位置",()->{
-            String query=mention.getText().toString().trim();if(query.length()<2){mention.setError("请先填写讲述地点");return;}
-            JSONObject gps=new JSONObject(),payload=new JSONObject();
-            try{gps.put("longitude",121.4737);gps.put("latitude",31.2304);gps.put("coordinateSystem","WGS84");gps.put("source","demo_sample");
-                gps.put("sampledAt",java.time.OffsetDateTime.now(java.time.ZoneOffset.ofHours(8)).withHour(8).withMinute(42).withSecond(0).withNano(0).toString());
-                payload.put("gps",gps);payload.put("placeMention",query);}catch(Exception ignored){}
-            String id=store.get("backend_recording_id","");
-            String path;
-            if(id.isEmpty()){try{payload.put("transcript",transcript());payload.put("placeMention",query);}catch(Exception ignored){}path="/v1/recordings";}
-            else path="/v1/recordings/"+id+"/places/gps";
-            backend.post(path,payload,(result,error)->{
-                if(error!=null){message("地点绑定未完成："+error+" 录音仍已保存，可稍后重试。");return;}
-                storePlaceResponse(result);message("✓ 已使用录音时的位置，并保留地点依据。 ");
-            });
-        });
     }
     private void player(LinearLayout parent){
         LinearLayout c=card(parent);text(c,"听录音",21,INK,true);gap(c,6);
@@ -274,7 +354,7 @@ public final class MainActivity extends Activity {
     private String formatTime(int ms){int sec=ms/1000;return String.format(java.util.Locale.ROOT,"%02d:%02d",sec/60,sec%60);}
     private void updateProgress(){if(media==null)return;if(progressBar!=null)progressBar.setProgress(media.getCurrentPosition());if(progressText!=null)progressText.setText(formatTime(media.getCurrentPosition())+" / "+formatTime(media.getDuration()));}
     private void tickProgress(){handler.postDelayed(()->{if(media!=null&&media.isPlaying()){updateProgress();tickProgress();}},250);}
-    private void releaseAudio(){if(media!=null){media.release();media=null;}progressBar=null;progressText=null;playButton=null;}
+    private void releaseAudio(){if(media!=null){media.release();media=null;}if(playButton!=null&&playButton.getText().toString().startsWith("正在播放"))playButton.setText("▶ 播放讲述");progressBar=null;progressText=null;playButton=null;}
     private void editTranscript(){
         EditText field=new EditText(this);field.setText(transcript());field.setTextSize(18);field.setMinLines(3);
         new AlertDialog.Builder(this).setTitle("修改转写文字").setView(field)
@@ -300,84 +380,141 @@ public final class MainActivity extends Activity {
     }
     private EditText input(String value,int minLines){EditText e=new EditText(this);e.setText(value);e.setTextSize(18);e.setTextColor(INK);e.setMinLines(minLines);e.setPadding(dp(12),dp(10),dp(12),dp(10));e.setBackground(outline(WHITE,16));return e;}
     private void memories(){
-        header("记忆","只显示你主动整理保存的故事");
-        EditText search=input("",1);search.setSingleLine(true);search.setHint("搜索标题或内容");body.addView(search,lp(-1,-2));gap(body,12);
-        LinearLayout filters=horizontal();body.addView(filters,lp(-1,-2));
-        for(String f:new String[]{"全部","人物","地点"}){
-            TextView chip=label(f,16,filter.equals(f)?WHITE:GREEN,true);chip.setGravity(Gravity.CENTER);chip.setMinHeight(dp(48));chip.setPadding(dp(12),dp(4),dp(12),dp(4));chip.setBackground(shape(filter.equals(f)?GREEN:WHITE,20));
-            LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,dp(48),1);p.rightMargin=dp(8);filters.addView(chip,p);chip.setOnClickListener(v->{filter=f;show("memories");});
-        }
-        gap(body,18);
+        header("记忆","家人的故事，连同原声一起保存");
+        EditText search=input("",1);search.setSingleLine(true);search.setHint("搜索记忆");body.addView(search,lp(-1,-2));gap(body,16);
         LinearLayout results=vertical();body.addView(results,lp(-1,-2));
-        Runnable refresh=()->renderMemoryResults(results,search.getText().toString());
+        Runnable refresh=()->{
+            results.removeAllViews();int count=0;String query=search.getText().toString().trim();
+            for(int i=0;i<remoteMemories.length();i++){
+                JSONObject item=remoteMemories.optJSONObject(i);if(item==null)continue;
+                String title=item.optString("title"),story=item.optString("story");
+                if(!query.isEmpty()&&!(title+story).contains(query))continue;
+                count++;
+                LinearLayout c=card(results);text(c,title,22,INK,true);gap(c,8);
+                JSONObject place=item.optJSONObject("place");
+                text(c,(place==null?"地点待确认":place.optString("name"))+" · "+item.optInt("sourceCount")+" 段原声",16,SUB,false);gap(c,8);
+                text(c,story,18,INK,false);gap(c,12);
+                addButton(c,"查看故事与原声",false,()->openMemory(item.optString("id")));
+            }
+            if(count==0){LinearLayout c=card(results);text(c,query.isEmpty()?"记忆正在加载":"没有找到相关记忆",18,INK,false);}
+        };
         search.addTextChangedListener(new android.text.TextWatcher(){public void beforeTextChanged(CharSequence s,int st,int c,int a){}public void onTextChanged(CharSequence s,int st,int before,int count){refresh.run();}public void afterTextChanged(android.text.Editable e){}});
         refresh.run();
     }
-    private void renderMemoryResults(LinearLayout results,String query){
-        results.removeAllViews();
-        if(!saved()||deleted()){LinearLayout c=card(results);text(c,"还没有整理好的记忆",20,INK,true);gap(c,8);text(c,"先在“录音”中听原声，再决定是否整理。",17,SUB,false);return;}
-        boolean match=query.trim().isEmpty()||(title()+" "+story()).contains(query.trim());
-        if(filter.equals("地点")&&!store.get("place_added",false))match=false;
-        if(!match){LinearLayout c=card(results);text(c,"没有找到符合条件的记忆",18,INK,true);return;}
-        LinearLayout c=card(results);text(c,title(),22,INK,true);gap(c,7);text(c,"今天 08:42 · 原声 18 秒",16,SUB,false);gap(c,8);
-        text(c,story(),18,INK,false);gap(c,10);text(c,store.get("shared",false)?"✓ 分享选择已保存":"◎ 仅自己可见",16,GREEN,false);gap(c,14);
-        addButton(c,"查看故事与录音",false,()->show("memory"));
-    }
     private void memory(){
-        back("记忆详情",()->show("memories"));text(body,title(),25,INK,true);gap(body,6);text(body,"今天 08:42 · 仅由你确认后保存",16,SUB,false);gap(body,17);
-        player(body);
-        LinearLayout c=card(body);text(c,"故事内容",21,INK,true);gap(c,8);text(c,story().isEmpty()?"仅保留原声，尚未添加故事文字。":story(),18,INK,false);gap(c,10);
-        text(c,"原声与整理文字分开保存",16,SUB,false);
-        LinearLayout clue=card(body);text(clue,"人物、事件与地点",21,INK,true);gap(clue,8);
-        text(clue,"? 爷爷 · 看电影：线索待核对",17,SUB,false);gap(clue,5);
-        text(clue,placeSummary(),17,SUB,false);gap(clue,12);
-        smallAction(clue,"查看地点绑定依据",()->show("place"));
-        LinearLayout source=card(body);text(source,"这段故事从哪里来",21,INK,true);gap(source,8);
-        text(source,"原声 1 · 今天 08:42 · 18 秒",17,INK,false);gap(source,5);
-        text(source,"故事来自这段录音。添加其他录音时可逐条核对。",16,SUB,false);
-        gap(body,5);addButton(body,"与家人共忆",true,()->show("prompts"));gap(body,12);
-        smallAction(body,"编辑记忆",()->show("edit"));gap(body,10);
-        smallAction(body,store.get("shared",false)?"查看分享选择":"设置分享范围",()->show("share"));gap(body,10);
-        smallAction(body,"导出文字",this::exportText);gap(body,10);
-        smallAction(body,"彻底删除",this::confirmDelete);
+        back("记忆详情",()->show("memories"));
+        if(remoteMemory==null){text(body,"记忆正在加载",18,INK,false);return;}
+        text(body,remoteMemory.optString("title"),26,INK,true);gap(body,8);
+        JSONArray sources=remoteMemory.optJSONArray("recordings");
+        text(body,(sources==null?0:sources.length())+" 段讲述共同组成这条记忆",16,SUB,false);gap(body,16);
+        if(sources!=null)for(int i=0;i<sources.length();i++){
+            JSONObject source=sources.optJSONObject(i);if(source==null)continue;
+            int audio=audioResource(source.optString("audioAsset"));
+            LinearLayout c=card(body);text(c,"讲述 "+(i+1)+(audio==0?"":" · "+audioLength(audio)),20,INK,true);gap(c,8);
+            text(c,source.optString("transcript"),18,INK,false);gap(c,12);
+            if(audio!=0){Button playSourceButton=button("▶ 播放讲述",false,()->{});
+                playSourceButton.setOnClickListener(v->playSource(audio,playSourceButton));c.addView(playSourceButton,lp(-1,-2));}
+            else text(c,"音频尚未同步",16,SUB,false);
+        }
+        LinearLayout storyCard=card(body);text(storyCard,"故事",21,INK,true);gap(storyCard,10);
+        text(storyCard,remoteMemory.optString("story"),18,INK,false);gap(storyCard,8);
+        text(storyCard,"由多段讲述整理，具体时间和地点可继续核对。",16,SUB,false);
+        if(remoteMemory.optBoolean("sample")){gap(storyCard,6);text(storyCard,"示例讲述使用演示配音。",16,SUB,false);}
+        JSONObject place=remoteMemory.optJSONObject("place");
+        if(place!=null){LinearLayout c=card(body);text(c,"记忆地点",21,INK,true);gap(c,8);
+            text(c,place.optString("name"),18,INK,false);gap(c,10);
+            map(c,"/v1/memories/"+selectedMemoryId+"/map");gap(c,8);
+            text(c,place.optString("evidence"),16,SUB,false);gap(c,12);
+            if(sources!=null&&sources.length()>0){JSONObject first=sources.optJSONObject(0);
+                if(first!=null)smallAction(c,"核对录音中的地点",()->openPlace(first.optString("id")));}}
+        addButton(body,"继续共忆",true,()->show("prompts"));
+        gap(body,12);smallAction(body,"编辑故事",this::editRemoteMemory);gap(body,10);
+        smallAction(body,"分享故事文字",this::shareRemoteMemory);gap(body,10);
+        smallAction(body,"删除这条记忆",this::deleteRemoteMemory);
+    }
+    private void editRemoteMemory(){
+        if(remoteMemory==null)return;
+        LinearLayout form=vertical();form.setPadding(dp(20),dp(8),dp(20),dp(8));
+        EditText titleField=input(remoteMemory.optString("title"),1);titleField.setHint("故事标题");
+        EditText storyField=input(remoteMemory.optString("story"),4);storyField.setHint("故事内容");
+        form.addView(titleField,lp(-1,-2));gap(form,12);form.addView(storyField,lp(-1,-2));
+        new AlertDialog.Builder(this).setTitle("编辑故事").setView(form)
+                .setPositiveButton("保存修改",(d,w)->{
+                    String title=titleField.getText().toString().trim();
+                    if(title.isEmpty()){message("请填写故事标题。");return;}
+                    JSONObject payload=new JSONObject();
+                    try{payload.put("title",title);payload.put("story",storyField.getText().toString().trim());}catch(Exception ignored){}
+                    backend.post("/v1/memories/"+selectedMemoryId+"/edit",payload,(data,error)->{
+                        if(data==null){message("修改没有保存："+error);return;}
+                        remoteMemory=data;loadMemories();message("故事已保存。");
+                    });
+                }).setNegativeButton("取消",null).show();
+    }
+    private void shareRemoteMemory(){
+        if(remoteMemory==null)return;
+        Intent intent=new Intent(Intent.ACTION_SEND);intent.setType("text/plain");
+        intent.putExtra(Intent.EXTRA_SUBJECT,remoteMemory.optString("title"));
+        intent.putExtra(Intent.EXTRA_TEXT,remoteMemory.optString("title")+"\n\n"+remoteMemory.optString("story"));
+        startActivity(Intent.createChooser(intent,"分享故事文字"));
+    }
+    private void deleteRemoteMemory(){
+        if(remoteMemory==null)return;
+        new AlertDialog.Builder(this).setTitle("删除这条记忆？")
+                .setMessage("整理后的故事会删除，原来的讲述录音仍会保留。")
+                .setPositiveButton("删除记忆",(d,w)->backend.delete("/v1/memories/"+selectedMemoryId,(data,error)->{
+                    if(data==null){message("删除未完成："+error);return;}
+                    remoteMemory=null;loadMemories();loadRecordings();page="memories";message("记忆已删除，讲述录音仍在。");
+                })).setNegativeButton("取消",null).show();
+    }
+    private void sampleBubble(String speaker,String message,boolean assistant){
+        LinearLayout bubble=card(body);bubble.setBackground(shape(assistant?0xFFE9EFE9:WHITE,24));
+        text(bubble,speaker,16,GREEN,true);gap(bubble,8);text(bubble,message,18,INK,false);
     }
     private void prompts(){
-        header("共忆","从一段声音，聊出更多细节");
-        LinearLayout c=card(body);text(c,"先听完这段讲述",22,INK,true);gap(c,10);
-        text(c,"听一听，再聊聊故事里的细节。",17,SUB,false);gap(c,14);
-        smallAction(c,"回听录音",this::play);
-        LinearLayout q=card(body);text(q,"可忽略的开放问题",18,SUB,true);gap(q,10);
-        String question=store.get("backend_question",QUESTIONS[questionIndex]);
-        text(q,"“"+question+"”",23,INK,true);gap(q,8);
-        text(q,"可以换一个问题，也可以跳过。",16,SUB,false);gap(q,14);
-        smallAction(q,"换一个问题",()->{
-            String session=store.get("conversation_id","");
-            if(session.isEmpty()){questionIndex=(questionIndex+1)%QUESTIONS.length;render();return;}
-            backend.post("/v1/conversations/"+session+"/prompts/next",new JSONObject(),(data,error)->{
-                if(error!=null){message("暂时无法换题："+error);return;}
-                store.put("backend_question",data.optString("question",QUESTIONS[questionIndex]));render();
-            });
-        });
+        header("共忆","一起把故事慢慢聊完整");
         String session=store.get("conversation_id","");
+        if(session.isEmpty()){
+            text(body,"一段共忆示例",16,SUB,false);gap(body,12);
+            sampleBubble("长辈","那天电影散场，我和他在街上走了很久。",false);
+            sampleBubble("家人","您还记得当时走的是哪条路吗？",false);
+            sampleBubble("寻忆","那一路上，还有什么让您记到现在？",true);
+        }
+        if(remoteConversation!=null&&session.equals(remoteConversation.optString("id"))){
+            JSONArray turns=remoteConversation.optJSONArray("turns");
+            if(turns!=null)for(int i=0;i<turns.length();i++){
+                JSONObject turn=turns.optJSONObject(i);if(turn==null)continue;
+                String speaker=turn.optString("speaker");
+                LinearLayout bubble=card(body);
+                bubble.setBackground(shape(speaker.equals("assistant")?0xFFE9EFE9:WHITE,24));
+                text(bubble,speaker.equals("assistant")?"寻忆":speaker.equals("elder")?"长辈":"家人",16,GREEN,true);gap(bubble,8);
+                text(bubble,turn.optString("text"),18,INK,false);
+            }
+        }
         LinearLayout talk=card(body);text(talk,"家庭谈话",21,INK,true);gap(talk,8);
         if(session.isEmpty()){
-            text(talk,"参与者同意后才能开始。系统不会在后台自动监听。",17,SUB,false);gap(talk,14);
+            text(talk,"邀请家人一起聊，开始前请征得在场人的同意。",17,SUB,false);gap(talk,14);
             addButton(talk,"开始共忆",true,()->new AlertDialog.Builder(this).setTitle("开始这次共忆？")
                     .setMessage("请先取得在场参与者同意。这次共忆只保存主动输入的文字。")
                     .setPositiveButton("已同意，开始",(d,w)->{
                         JSONObject payload=new JSONObject();try{payload.put("consent",true);String rid=store.get("backend_recording_id","");if(!rid.isEmpty())payload.put("recordingId",rid);}catch(Exception ignored){}
                         backend.post("/v1/conversations",payload,(data,error)->{
                             if(error!=null){message("谈话未开始："+error);return;}
-                            store.put("conversation_id",data.optString("id",""));message("共忆已开始。请写下长辈或家人刚才说的话。 ");
+                            store.put("conversation_id",data.optString("id",""));remoteConversation=null;loadConversation();
+                            message("共忆已开始。");
                         });
                     }).setNegativeButton("取消",null).show());
         }else{
-            text(talk,"✓ 可以记下刚才谈到的内容。",17,GREEN,false);gap(talk,10);
+            text(talk,"想起什么，就从这里继续说。",17,SUB,false);gap(talk,10);
+            RadioGroup roles=new RadioGroup(this);roles.setOrientation(RadioGroup.HORIZONTAL);
+            RadioButton elder=new RadioButton(this);elder.setId(View.generateViewId());elder.setText("长辈");
+            elder.setTextSize(17);elder.setTextColor(INK);elder.setMinHeight(dp(48));
+            RadioButton family=new RadioButton(this);family.setId(View.generateViewId());family.setText("家人");
+            family.setTextSize(17);family.setTextColor(INK);family.setMinHeight(dp(48));
+            roles.addView(elder);roles.addView(family);roles.check(elder.getId());talk.addView(roles,lp(-1,-2));gap(talk,8);
             EditText turn=input("",3);turn.setHint("输入刚才讲述的话");talk.addView(turn,lp(-1,-2));gap(talk,12);
-            addButton(talk,"提交长辈讲述并获取提问",true,()->submitTurn("elder",turn.getText().toString()));gap(talk,10);
-            smallAction(talk,"提交家人补充",()->submitTurn("family",turn.getText().toString()));
+            addButton(talk,"发送",true,()->submitTurn(roles.getCheckedRadioButtonId()==family.getId()?"family":"elder",turn.getText().toString()));
         }
-        gap(body,3);text(body,"语音互动等待官方 SDK 下发后进行补充；目前使用文字共忆。",16,SUB,false);
+        gap(body,3);text(body,"语音对话等待官方 SDK 下发后进行补充。",16,SUB,false);
     }
     private void submitTurn(String speaker,String value){
         String content=value.trim();if(content.isEmpty()){message("请先输入本轮讲述文字。 ");return;}
@@ -385,11 +522,12 @@ public final class MainActivity extends Activity {
         JSONObject payload=new JSONObject();try{payload.put("speaker",speaker);payload.put("text",content);}catch(Exception ignored){}
         backend.post("/v1/conversations/"+session+"/turns",payload,(data,error)->{
             if(error!=null){message("讲述未提交："+error);return;}
-            if(speaker.equals("family")){message("家人的补充已记入这次谈话。 ");return;}
+            if(speaker.equals("family")){loadConversation();message("家人的补充已记入这次谈话。");return;}
             backend.post("/v1/conversations/"+session+"/prompts/next",new JSONObject(),(prompt,promptError)->{
                 if(promptError!=null){message("讲述已保存，但提问暂不可用："+promptError);return;}
                 store.put("backend_question",prompt.optString("question",QUESTIONS[questionIndex]));
-                message("长辈讲述已保存。下方是可忽略的开放问题。 ");
+                loadConversation();
+                message("长辈讲述已保存。");
             });
         });
     }
@@ -439,52 +577,21 @@ public final class MainActivity extends Activity {
         });
     }
     private void mine(){
-        header("我的","设备、地点与隐私由你掌控");
-        LinearLayout device=card(body);text(device,"记忆珠连接",21,INK,true);gap(device,8);
-        text(device,connected()?"✓ 已连接":"○ 未连接",17,SUB,false);gap(device,14);
-        smallAction(device,connected()?"管理连接":"连接记忆珠",()->show("connect"));
-        LinearLayout location=card(body);text(location,"地点记录",21,INK,true);gap(location,8);
-        text(location,store.get("location_pref",false)?"录音后按次添加":"关闭（默认）",18,INK,true);gap(location,6);
-        text(location,"不会持续追踪行动轨迹；每段录音单独决定。",16,SUB,false);gap(location,14);
-        smallAction(location,store.get("location_pref",false)?"关闭地点入口":"允许按次添加地点",()->{store.put("location_pref",!store.get("location_pref",false));message("地点设置已更新。每段录音仍需单独添加。 ");});
-        LinearLayout privacy=card(body);text(privacy,"隐私与数据",21,INK,true);gap(privacy,8);
-        text(privacy,"录音默认仅自己可见，分享需要逐条确认。",17,SUB,false);gap(privacy,14);
-        smallAction(privacy,"重置演示数据",()->new AlertDialog.Builder(this).setTitle("重置演示？")
-                .setMessage("会先删除本次演示在服务器上的地点与共忆数据，再清除本机状态并恢复初始待同步录音。连接配置会保留。")
-                .setPositiveButton("重置",(d,w)->deleteRemoteThen(()->{store.reset();page="home";message("演示已重置。 ");}))
-                .setNegativeButton("取消",null).show());
-        LinearLayout server=card(body);text(server,"后端服务",21,INK,true);gap(server,8);
-        text(server,"用于地点搜索和文字共忆。录音不会上传到服务端。",16,SUB,false);gap(server,12);
-        text(server,"服务地址",17,INK,true);gap(server,6);
-        String savedUrl=store.get("backend_url",BackendConfig.DEFAULT_URL);
-        EditText endpoint=input(savedUrl.isEmpty()?BackendConfig.DEFAULT_URL:savedUrl,1);endpoint.setSingleLine(true);endpoint.setHint(BackendConfig.DEFAULT_URL);server.addView(endpoint,lp(-1,-2));gap(server,12);
-        text(server,"访问令牌",17,INK,true);gap(server,6);
-        EditText token=input(store.get("backend_token",""),1);token.setSingleLine(true);token.setHint("粘贴服务访问令牌");
-        token.setTransformationMethod(android.text.method.PasswordTransformationMethod.getInstance());server.addView(token,lp(-1,-2));gap(server,12);
-        smallAction(server,"保存连接配置",()->{
-            String url=endpoint.getText().toString().trim();String secret=token.getText().toString().trim();
-            if(!BackendConfig.valid(url)||url.isEmpty()){endpoint.setError("请输入 HTTPS 地址");return;}
-            if(secret.length()<32){token.setError("请输入有效访问令牌");return;}
-            store.put("backend_url",url);store.put("backend_token",secret);
-            message("连接配置已保存在本机。地点和谈话操作会使用此服务。 ");
-        });
+        header("我的","家庭空间与设备");
+        LinearLayout family=card(body);text(family,"家人",21,INK,true);gap(family,10);
+        text(family,"妈妈 · 女儿 · 爸爸",18,INK,false);gap(family,6);
+        text(family,"每条记忆都可以从声音继续讲下去。",16,SUB,false);
+        LinearLayout device=card(body);text(device,"声音记忆珠",21,INK,true);gap(device,9);
+        text(device,"○ 当前未连接",18,INK,false);gap(device,8);
+        text(device,"手机上已有的家庭记忆仍可浏览。",16,SUB,false);gap(device,14);
+        smallAction(device,"查看设备",()->show("connect"));
+        LinearLayout privacy=card(body);text(privacy,"隐私",21,INK,true);gap(privacy,8);
+        text(privacy,"分享前逐条选择接收人和内容。",17,SUB,false);
     }
     private void connect(){
-        back("连接记忆珠",()->show("mine"));
-        LinearLayout c=card(body);text(c,"将记忆珠放在手机旁边",22,INK,true);gap(c,10);
-        text(c,"设备连接等待官方 SDK 下发后进行补充。这里可以预览连接后的页面。",16,SUB,false);gap(c,18);
-        addButton(c,connected()?"断开连接":"连接记忆珠",true,()->{if(connected())new AlertDialog.Builder(this).setTitle("断开记忆珠？")
-                    .setMessage("已同步到手机的内容会保留。")
-                    .setPositiveButton("断开",(d,w)->{store.put("connected",false);page="home";message("已断开连接，手机中的内容仍保留。 ");})
-                    .setNegativeButton("取消",null).show();
-                else{store.put("connected",true);page="home";message("✓ 已连接记忆珠。 ");}});
-        gap(c,14);
-        text(c,recordingDemo?"● 录音中 · 状态预览":"挂件录音状态预览",18,recordingDemo?WARN:INK,true);gap(c,8);
-        text(c,"不采集声音，仅预览挂件上的状态提示。",16,SUB,false);gap(c,12);
-        smallAction(c,recordingDemo?"结束录音":"开始录音",()->{
-            recordingDemo=!recordingDemo;
-            if(recordingDemo)message("● 录音状态预览中。再次点击结束。 ");
-            else message("✓ 状态预览已结束。 ");
-        });
+        back("声音记忆珠",()->show("mine"));
+        LinearLayout c=card(body);text(c,"设备暂未连接",22,INK,true);gap(c,10);
+        text(c,"连接记忆珠后，录音会出现在这里。",18,INK,false);gap(c,12);
+        text(c,"设备通信等待官方 SDK 下发后进行补充。",16,SUB,false);
     }
 }

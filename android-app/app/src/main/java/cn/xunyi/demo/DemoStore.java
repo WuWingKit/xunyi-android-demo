@@ -12,7 +12,6 @@ final class DemoStore {
     void put(String key, boolean value) { p.edit().putBoolean(key, value).apply(); }
     void put(String key, String value) { p.edit().putString(key, value).apply(); }
     void reset() {
-        String url=get("backend_url","");String token=get("backend_token","");
-        p.edit().clear().putString("backend_url",url).putString("backend_token",token).apply();
+        p.edit().clear().apply();
     }
 }

@@ -1,38 +1,28 @@
 # 寻忆 Android Demo
 
-原生 Android Java 演示应用。底部导航为“首页／记忆／共忆／我的”，按照[产品功能文档](https://wcnp29ttq8dx.feishu.cn/wiki/CXJ6wkUwxi8ylLk6KxLcB1gdnUb)与视觉规范实现；旧[HTML 原型](https://github.com/tulip627722-byte/anker-hanker)只提供故事样例和共忆问题参考。
+原生 Android Java 应用，按暖奶油色、清晰文字、大触控区域设计。底部为“首页／记忆／共忆／我的”。开发顺序和问题清单见[详细检查与设计](../DESIGN_REVIEW_2026-09-27.md)。
 
 ## 演示路径
 
-1. 录音首页显示 1 条待同步录音。点击“同步录音”，可在进度中点“模拟同步失败”，再重试。失败时录音仍在挂件的说明会保留。
-2. 同步后打开录音详情。播放器播放内置的**合成演示配音**，有暂停、进度和时长。转写文字可以修改；它与音频分开。
-3. 点击“整理成记忆”，修改标题或故事草稿并保存。AI 转写、线索和故事草稿均是预设演示数据，页面明确标注等待官方 SDK。
-4. 在记忆页搜索、筛选、查看详情与来源。详情可进入共忆问题、逐条分享、撤回、导出文字或删除。
-5. App 预填 HTTPS 服务地址，在“我的”输入单独的访问令牌。录音详情可搜索高德地点候选并由用户确认，或使用示例录音附带的位置记录展示绑定与依据。
-6. 在“与家人共忆”取得参与者同意后，主动提交长辈和家人讲述文字。后台返回可忽略的开放式规则问题，并明确标注“等待官方 SDK 下发后进行补充”。
-7. 删除或重置演示会请求删除服务器上相应地点与谈话数据，再清除本机演示状态。
+1. 首页直接看到家庭记忆，设备卡显示当前连接状态。
+2. 记忆页搜索 3 条服务端保存的示例记忆。第一条由 2 段独立讲述组成，可分别播放；示例讲述使用本地演示配音。首页也可进入录音收件箱，逐段查看讲述与关联记忆。
+3. 详情中的高德地图显示记忆地点。点“核对录音中的地点”，可搜索地点，查看候选标点、名称和地址，再确认绑定。确认后关联记忆地点也会更新。
+4. 记忆详情可直接修改服务端故事、调用系统分享面板分享文字，或删除整理结果而保留原始讲述。
+5. 共忆页先展示示例对话。参与者同意后可录入长辈和家人的文字，服务器保存轮次并给出规则生成的开放追问。语音识别及大模型能力等待官方 SDK 下发后进行补充。
 
-本机演示状态保存在应用私有 `SharedPreferences`。配置令牌后，地点与谈话文字会通过 HTTPS 请求后台；内置示例音频不会上传。没有实际蓝牙通信、录音采集、ASR、大模型推理、家庭账号或线上分享。分享选择仅用于本机演示；“导出文字”调用系统分享界面。设备录音入口用状态预览表达，App 不采集手机麦克风。
+记忆和地点数据来自当前 HTTPS 后台；地图图片由后台使用高德 Web 服务 Key 获取。设备通信、真实硬件录音、实时语音识别和模型推理仍需官方 SDK。当前后端是比赛演示单租户服务。
 
 ## 构建与运行
 
-使用 Android Studio 打开本目录。工程配置为 JDK 21、Android SDK 36 和 Android Gradle Plugin 9.0.1。若 Gradle 依赖尚未缓存且 Maven 网络不可用，可用本地 SDK 工具构建：
+使用 Android Studio 打开本目录，JDK 21、Android SDK 36。若 Gradle 依赖尚未缓存，可用本地 SDK 工具：
 
 ```powershell
-cd E:\WorkSpace\安克黑客松\android-app
+$env:XUNYI_DEMO_TOKEN_FILE = 'C:\Users\small\.codex\xunyi-private\app-token.txt'
 .\build-demo.ps1
-E:\Android\Sdk\platform-tools\adb.exe install -r .\build-manual\xunyi-demo.apk
-```
-
-启动指定模拟器：
-
-```powershell
 $env:ANDROID_AVD_HOME = 'E:\Android\Avd'
-E:\Android\Sdk\emulator\emulator.exe -avd Pixel_7_API_36
+E:\Android\Sdk\emulator\emulator.exe -avd Pixel_7_API_36 -port 5558
 ```
 
-构建输出为 `build-manual/xunyi-demo.apk`。脚本首次运行会在忽略目录 `build-manual` 内生成仅供演示的签名密钥。它不会用于正式发布。
+确认 `adb -s emulator-5558 emu avd name` 返回 `Pixel_7_API_36` 后安装 `build-manual/xunyi-demo.apk`。5555 端口的雷电模拟器不能作为安装目标。
 
-## 后端与官方 SDK 接口
-
-“我的”页可保存 HTTPS 服务地址与访问令牌。地点和谈话页调用 [当前接口](API_CONTRACT.md)；其他功能仍是本机演示。官方 SDK 提供后再接入设备通信、音频文件、语音识别和模型提问。保持“原声独立保存、整理需确认、分享逐条授权、线索标注不确定性”的数据边界。
+脚本从仓库外读取独立演示令牌，生成文件位于忽略的 `build-manual/gen`。服务地址固定在 `BackendConfig`，用户界面没有后台配置入口。不要把令牌、签名文件或构建 APK 推入 Git；APK 中令牌能被提取，赛后应轮换。

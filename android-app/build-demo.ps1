@@ -9,6 +9,13 @@ $res = Join-Path $build 'res'
 $classes = Join-Path $build 'classes'
 $gen = Join-Path $build 'gen'
 New-Item -ItemType Directory -Force $res, $classes, $gen | Out-Null
+$credentialFile = if ($env:XUNYI_DEMO_TOKEN_FILE) { $env:XUNYI_DEMO_TOKEN_FILE } else { 'C:\Users\small\.codex\xunyi-private\app-token.txt' }
+if (-not (Test-Path -LiteralPath $credentialFile)) { throw 'Demo token file missing; set XUNYI_DEMO_TOKEN_FILE.' }
+$credential = (Get-Content -LiteralPath $credentialFile -Raw).Trim()
+if ($credential -notmatch '^[a-fA-F0-9]{64,128}$') { throw 'Demo token format invalid.' }
+$credentialSource = Join-Path $gen 'cn\xunyi\demo\DemoCredential.java'
+New-Item -ItemType Directory -Force (Split-Path $credentialSource) | Out-Null
+[System.IO.File]::WriteAllText($credentialSource, "package cn.xunyi.demo; final class DemoCredential { static final String TOKEN = `"$credential`"; }", [System.Text.UTF8Encoding]::new($false))
 $tools = Join-Path $Sdk 'build-tools\36.0.0'
 $androidJar = Join-Path $Sdk 'platforms\android-36\android.jar'
 Push-Location $base

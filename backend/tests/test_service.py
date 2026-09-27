@@ -8,6 +8,9 @@ from service import InputError, Service, mentioned_place
 
 
 class FakeAmap:
+    def static_map(self, points):
+        self.last_points = points
+        return b"\x89PNG\r\n\x1a\nexample"
     def convert_gps(self, lon, lat):
         return lon + 0.01, lat + 0.01
 
@@ -83,6 +86,43 @@ class ServiceTests(unittest.TestCase):
             self.service.recording(record["id"])
         with self.assertRaises(KeyError):
             self.service.next_prompt(session["id"])
+
+    def test_seed_memories_have_multiple_recordings_and_map(self):
+        memories = self.service.memories()
+        self.assertEqual(len(memories), 3)
+        first = self.service.memory("a" * 32)
+        self.assertEqual(len(first["recordings"]), 2)
+        self.assertEqual(len(self.service.recordings()), 4)
+        self.assertNotEqual(first["recordings"][0]["id"], first["recordings"][1]["id"])
+        self.assertTrue(self.service.memory_map(first["id"]).startswith(b"\x89PNG"))
+        self.assertEqual(len(self.service.memories()), 3)
+
+    def test_conversation_history_includes_assistant_prompt(self):
+        session = self.service.create_conversation({"consent": True})
+        self.service.add_turn(session["id"], {"speaker": "elder", "text": "看电影"})
+        question = self.service.next_prompt(session["id"])["question"]
+        turns = self.service.conversation(session["id"])["turns"]
+        self.assertEqual([t["speaker"] for t in turns], ["assistant", "elder", "assistant"])
+        self.assertEqual(turns[-1]["text"], question)
+
+    def test_confirmed_recording_place_updates_linked_memory(self):
+        recording_id = "1" * 32
+        record = self.service.search_places(recording_id, "上海人民广场")
+        self.service.confirm_place(recording_id, record["candidates"][0]["candidateId"])
+        place = self.service.memory("a" * 32)["place"]
+        self.assertEqual(place["name"], "上海人民广场")
+        self.assertEqual(place["mapLongitude"], 121.4)
+
+    def test_edit_and_delete_memory_keep_recordings_and_tombstone_seed(self):
+        mid = "a" * 32
+        edited = self.service.update_memory(mid, {"title": "新的标题", "story": "修改后的故事"})
+        self.assertEqual(edited["title"], "新的标题")
+        self.assertEqual(edited["story"], "修改后的故事")
+        self.assertTrue(self.service.delete_memory(mid)["recordingsRetained"])
+        self.assertEqual(len(self.service.recordings()), 4)
+        again = Service(self.service.database, FakeAmap())
+        with self.assertRaises(KeyError):
+            again.memory(mid)
 
 
 if __name__ == "__main__":

@@ -34,6 +34,15 @@ class Handler(BaseHTTPRequestHandler):
             return False
         return True
 
+    def _send_png(self, data):
+        self.send_response(200)
+        self.send_header("Content-Type", "image/png")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "private, max-age=300")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        self.wfile.write(data)
+
     def _body(self):
         try:
             length = int(self.headers.get("Content-Length", "0"))
@@ -55,13 +64,42 @@ class Handler(BaseHTTPRequestHandler):
             return 200, {"status": "ok", "service": "xunyi-demo"}
         if not self._authorized():
             return None
+        if path == "/v1/memories" and self.command == "GET":
+            return 200, {"memories": self.service.memories()}
+        match = re.fullmatch(r"/v1/memories/([a-f0-9]{32})", path)
+        if match and self.command == "GET":
+            return 200, self.service.memory(match.group(1))
+        if match and self.command == "PATCH":
+            return 200, self.service.update_memory(match.group(1), self._body())
+        if match and self.command == "DELETE":
+            return 200, self.service.delete_memory(match.group(1))
+        match = re.fullmatch(r"/v1/memories/([a-f0-9]{32})/edit", path)
+        if match and self.command == "POST":
+            return 200, self.service.update_memory(match.group(1), self._body())
+        match = re.fullmatch(r"/v1/memories/([a-f0-9]{32})/map", path)
+        if match and self.command == "GET":
+            self._send_png(self.service.memory_map(match.group(1)))
+            return None
+        match = re.fullmatch(r"/v1/memories/([a-f0-9]{32})/recordings", path)
+        if match and self.command == "POST":
+            return 200, self.service.link_recording(match.group(1), str(self._body().get("recordingId", "")))
         if path == "/v1/recordings" and self.command == "POST":
             return 201, self.service.create_recording(self._body())
+        if path == "/v1/recordings" and self.command == "GET":
+            return 200, {"recordings": self.service.recordings()}
         match = re.fullmatch(r"/v1/recordings/([a-f0-9]{32})", path)
         if match and self.command == "GET":
             return 200, self.service.recording(match.group(1))
         if match and self.command == "DELETE":
             return 200, self.service.delete_recording(match.group(1))
+        match = re.fullmatch(r"/v1/recordings/([a-f0-9]{32})/places/map", path)
+        if match and self.command == "GET":
+            self._send_png(self.service.recording_map(match.group(1)))
+            return None
+        match = re.fullmatch(r"/v1/recordings/([a-f0-9]{32})/places/candidates/([a-f0-9]{32})/map", path)
+        if match and self.command == "GET":
+            self._send_png(self.service.recording_map(match.group(1), match.group(2)))
+            return None
         match = re.fullmatch(r"/v1/recordings/([a-f0-9]{32})/places/search", path)
         if match and self.command == "POST":
             body = self._body()
@@ -76,6 +114,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/v1/conversations" and self.command == "POST":
             return 201, self.service.create_conversation(self._body())
         match = re.fullmatch(r"/v1/conversations/([a-f0-9]{32})", path)
+        if match and self.command == "GET":
+            return 200, self.service.conversation(match.group(1))
         if match and self.command == "DELETE":
             return 200, self.service.delete_conversation(match.group(1))
         match = re.fullmatch(r"/v1/conversations/([a-f0-9]{32})/turns", path)
@@ -93,6 +133,9 @@ class Handler(BaseHTTPRequestHandler):
         self._handle()
 
     def do_DELETE(self):
+        self._handle()
+
+    def do_PATCH(self):
         self._handle()
 
     def _handle(self):

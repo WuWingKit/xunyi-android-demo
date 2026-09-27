@@ -1,6 +1,6 @@
 # 寻忆 Demo 后台
 
-Python 3.11 标准库服务，使用 SQLite 保存录音地点证据和共忆文字轮次。服务端持有高德 Web 服务 Key；Android 端只持有单独的 API 访问令牌。
+Python 3.11 标准库服务，使用 SQLite 保存记忆、关联录音、地点证据和共忆文字轮次。服务端持有高德 Web 服务 Key；Android Demo 使用独立访问令牌。
 
 ## 接口
 
@@ -8,13 +8,23 @@ Python 3.11 标准库服务，使用 SQLite 保存录音地点证据和共忆文
 
 | 方法与路径 | 用途 |
 | --- | --- |
+| `GET /v1/memories` | 记忆列表，包含地点和来源数 |
+| `GET /v1/memories/{id}` | 记忆详情及各段独立录音来源 |
+| `POST /v1/memories/{id}/edit` | 修改故事标题与正文 |
+| `DELETE /v1/memories/{id}` | 删除整理后的记忆，保留来源录音 |
+| `GET /v1/memories/{id}/map` | 带标点的高德地图 PNG |
+| `POST /v1/memories/{id}/recordings` | 经用户确认后关联另一段录音 |
 | `POST /v1/recordings` | 创建录音元数据；有地点提及及同次 GPS 时自动绑定，否则搜索候选 |
+| `GET /v1/recordings` | 已保存讲述列表及关联记忆数量 |
 | `GET /v1/recordings/{id}` | 查看录音、绑定依据和候选 |
 | `POST /v1/recordings/{id}/places/search` | 用高德关键词重新搜索候选 |
 | `POST /v1/recordings/{id}/places/gps` | 将录音豆 GPS 样本绑定到已有录音 |
 | `POST /v1/recordings/{id}/places/confirm` | 确认本次搜索返回的候选 ID |
+| `GET /v1/recordings/{id}/places/map` | 已绑定位置或候选总览的地图 PNG |
+| `GET /v1/recordings/{id}/places/candidates/{candidateId}/map` | 聚焦单个候选的地图 PNG |
 | `DELETE /v1/recordings/{id}` | 删除录音地点数据、候选和关联谈话 |
 | `POST /v1/conversations` | 在参与者明确同意后开始谈话演示 |
+| `GET /v1/conversations/{id}` | 读取长辈、家人和寻忆的历史轮次 |
 | `POST /v1/conversations/{id}/turns` | 主动提交一轮长辈或家人的文字 |
 | `POST /v1/conversations/{id}/prompts/next` | 获取可忽略、可更换的规则演示问题 |
 | `DELETE /v1/conversations/{id}` | 删除谈话文字 |
@@ -27,7 +37,7 @@ Python 3.11 标准库服务，使用 SQLite 保存录音地点证据和共忆文
 
 `source=demo_sample` 会在证据中注明是示例录音附带的位置；正式设备上传时使用 `source=device`。GPS 原坐标保留为 WGS84，供高德地图使用的坐标经其官方转换接口转为 GCJ-02。没有 GPS 时，高德搜索只产生候选；用户提交服务端给出的 `candidateId` 后才绑定。当前 POI 不能证明历史地点，用户需核对后确认。
 
-服务器高德请求限制使用 IPv4，因为当前 Web 服务 Key 的 IP 白名单对应服务器 IPv4；服务地址、令牌和 Key 均不写入仓库。
+服务器高德请求限制使用 IPv4，因为当前 Web 服务 Key 的 IP 白名单对应服务器 IPv4；地图由服务端代理 PNG，Key 不进入 App。服务地址可公开，令牌和 Key 均不写入仓库。示例记忆使用固定 ID 幂等写入；再次启动不会覆盖用户确认的地点。
 
 谈话接口只处理用户主动提交的文字，不接收或监听实时音频。返回的提问有 `source=demo_rules` 和“等待官方 SDK 下发后进行补充”标识，后续可替换成官方 SDK 的语音识别、说话人分离与大模型能力。
 
